@@ -16,6 +16,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
       - run: pip install build
+      - run: pip install scikit-build-core pybind11
       - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
       - run: python -m build --no-isolation
       - uses: actions/upload-artifact@v4
