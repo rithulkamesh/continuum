@@ -1,0 +1,82 @@
+namespace continuum.cir;
+
+enum NodeKind : byte {
+  TensorOp = 0,
+  TokenOp = 1,
+  PromptOp = 2,
+  ToolOp = 3,
+  ControlOp = 4
+}
+
+enum DType : byte { F32 = 0, F16 = 1, BF16 = 2, I32 = 3, I64 = 4, U8 = 5, Bool = 6 }
+enum Device : byte { CPU = 0, CUDA = 1, MPS = 2, MLX = 3, Remote = 4 }
+enum TypeKind : byte { TensorType = 0, TokensType = 1, SchemaType = 2, EffectType = 3 }
+enum PayloadKind : byte { TensorOpPayload = 0, TokenOpPayload = 1, PromptOpPayload = 2, ToolOpPayload = 3, ControlOpPayload = 4 }
+
+table TensorType {
+  shape:[long];
+  dtype:DType;
+  device:Device;
+}
+
+table TokensType {
+  vocab_id:string;
+  max_len:int;
+  model_family:string;
+}
+
+table SchemaType {
+  canonical_json:string;
+  schema_hash:ulong;
+}
+
+table EffectType {
+  bits:ubyte;
+}
+
+table TensorOpPayload {
+  op_name:string;
+  attrs:[long];
+}
+
+table TokenOpPayload {
+  op_name:string;
+  model_id:string;
+  temperature:float;
+  max_tokens:int;
+}
+
+table PromptOpPayload {
+  template_id:string;
+  slot_inputs:[ulong];
+}
+
+table ToolOpPayload {
+  tool_name:string;
+  input_schema_json:string;
+  output_schema_json:string;
+}
+
+table ControlOpPayload {
+  kind:ubyte;
+  branch_entries:[ulong];
+}
+
+table Node {
+  id:ulong;
+  kind:NodeKind;
+  debug_name:string;
+  inputs:[ulong];
+  out_type_kind:TypeKind;
+  effect_bits:ubyte;
+  payload_kind:PayloadKind;
+}
+
+table Graph {
+  magic:uint;
+  version:ushort;
+  node_count:ulong;
+  nodes:[Node];
+}
+
+root_type Graph;
