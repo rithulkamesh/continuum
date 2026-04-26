@@ -68,6 +68,7 @@ PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
 Then open:
 
 - `docs/api/python/_build/index.html`
+- GitHub Pages: `https://rithulkamesh.github.io/continuum/python/`
 
 Build C++ docs locally:
 
@@ -78,3 +79,4 @@ doxygen Doxyfile
 Then open:
 
 - `docs/api/cpp/html/index.html`
+- GitHub Pages: `https://rithulkamesh.github.io/continuum/cpp/`
