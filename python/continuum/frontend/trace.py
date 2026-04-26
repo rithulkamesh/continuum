@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 
 from continuum._native import GraphBuilder, NodeKind, eager_step
