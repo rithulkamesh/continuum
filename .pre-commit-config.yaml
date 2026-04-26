@@ -1,0 +1,25 @@
+exclude: |
+  (?x)^(
+    docs/api/python/_build/|
+    docs/api/cpp/|
+    build/|
+    build-tests/|
+    dist/|
+    \.venv.*|
+    _skbuild/
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format

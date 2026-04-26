@@ -108,4 +108,3 @@ def test_native_runtime_fallback_helpers() -> None:
         assert True
     result = native.benchmark_deterministic_m1(cost_per_token_ms=2.0)
     assert "cache_hit_rate" in result
-

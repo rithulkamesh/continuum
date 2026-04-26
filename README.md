@@ -1,14 +1,22 @@
 # Continuum
 
-Continuum is a unified execution runtime for LLM and ML programs.  
-It is not an API wrapper and not an orchestration-only tool.  
-The core system executes a shared intermediate representation (IR) that spans token generation and tensor computation in one runtime.
+Continuum is a unified execution runtime for LLM and ML programs.
+It is not just an API wrapper and not just orchestration glue.
+Continuum executes a shared intermediate representation (IR) that spans token generation and tensor computation inside one runtime.
+
+## Why Continuum
+
+- **One IR, two worlds**: token ops and tensor ops in a single executable graph.
+- **Backend-agnostic caching**: reusable backend state handles enable cross-call prefix reuse without backend-specific app code.
+- **Capability-driven dispatch**: runtime routes ops by declared backend capability, not brittle string checks.
+- **Explicit interoperability**: cross-backend tensors are tagged and converted explicitly, never silently mixed.
+- **Native-ready architecture**: C++ core with ABI boundary prep for future dynamic backend loading.
 
 ## Core Idea
 
-Continuum uses one IR to represent both token and tensor operations, then executes that graph through a single interpreter.  
-KV caching is treated as a program-level concern rather than a backend-specific add-on.  
-Backends receive reusable state handles through a common contract, so cache-aware execution can remain backend-agnostic.  
+Continuum uses one IR to represent both token and tensor operations, then executes that graph through a single interpreter.
+KV caching is treated as a program-level concern rather than a backend-specific add-on.
+Backends receive reusable state handles through a common contract, so cache-aware execution can remain backend-agnostic.
 This allows the same execution model to drive cloud LLM calls, local LLM backends, and tensor workloads.
 
 ## What Works Today
@@ -17,6 +25,7 @@ This allows the same execution model to drive cloud LLM calls, local LLM backend
 - KV cache index with canonical prefix normalization
 - Azure backend (real network execution)
 - libtorch backend (tensor/training execution)
+- MLX backend (native tensor op path for Apple workflows)
 
 ## Example
 
@@ -24,7 +33,7 @@ See `examples/01_research_agent.py` for a paired benchmark workflow that exercis
 
 ## Benchmarking Approach
 
-Benchmarks are run as paired trials (uncached vs cached on identical input), with warmup discarded and robust statistics reported (median/p50/p95).  
+Benchmarks are run as paired trials (uncached vs cached on identical input), with warmup discarded and robust statistics reported (median/p50/p95).
 Primary signal is token reduction (`tokens_saved / (tokens_sent + tokens_saved)`), with latency ratio tracked as secondary due to provider/network noise.
 
 ## Status
@@ -54,6 +63,18 @@ import continuum
 PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py
 ```
 
+## Pre-commit Hooks
+
+Set up local quality gates (`ruff`, formatting, YAML/whitespace checks):
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+Note: generated docs/build outputs are excluded by default in `.pre-commit-config.yaml`.
+
 ## API Docs
 
 Build Python docs locally:
@@ -80,3 +101,17 @@ Then open:
 
 - `docs/api/cpp/html/index.html`
 - GitHub Pages: `https://rithulkamesh.github.io/continuum/cpp/`
+
+## Citation
+
+If Continuum helps your work, cite it as:
+
+```bibtex
+@software{continuum2026,
+  title        = {Continuum: Unified Runtime for Token and Tensor Programs},
+  author       = {Kamesh, Rithul and Contributors},
+  year         = {2026},
+  url          = {https://github.com/rithulkamesh/continuum},
+  version      = {1.0.0}
+}
+```

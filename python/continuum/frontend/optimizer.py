@@ -136,7 +136,10 @@ class Optimizer:
     def step(self, batch):
         params = list(self.program.parameters()) if hasattr(self.program, "parameters") else []
         for p in params:
-            evaluate = lambda: self._score(batch)
+
+            def evaluate():
+                return self._score(batch)
+
             if p.kind == "tensor":
                 self._tensor.update(p, evaluate)
             elif p.kind == "text":
