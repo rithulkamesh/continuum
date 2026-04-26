@@ -37,7 +37,9 @@ class Linear(Module):
         self.out_features = int(out_features)
         self.weight = Param.tensor((out_features, in_features))
         self.bias = Param.tensor((out_features,))
-        self.weight_values = [[0.0 for _ in range(self.in_features)] for _ in range(self.out_features)]
+        self.weight_values = [
+            [0.0 for _ in range(self.in_features)] for _ in range(self.out_features)
+        ]
         self.bias_values = [0.0 for _ in range(self.out_features)]
 
     def forward(self, x):

@@ -34,7 +34,9 @@ benchmark_deterministic_m1 = getattr(_c.runtime, "benchmark_deterministic_m1", N
 
 def _missing_runtime_fn(name: str):
     def _fn(*args, **kwargs):
-        raise RuntimeError(f"native runtime function '{name}' is unavailable in loaded _continuum module")
+        raise RuntimeError(
+            f"native runtime function '{name}' is unavailable in loaded _continuum module"
+        )
 
     return _fn
 
@@ -44,6 +46,7 @@ if benchmark_vllm_agent is None:
 if benchmark_agent_paired is None:
     benchmark_agent_paired = _missing_runtime_fn("benchmark_agent_paired")
 if benchmark_deterministic_m1 is None:
+
     def benchmark_deterministic_m1(cost_per_token_ms=2.0):
         return {
             "backend": "fake_llm",

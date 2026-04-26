@@ -16,7 +16,13 @@ class Program:
     def __call__(self, x):
         text_bonus = 2.0 if "good" in self.text.value.split() else 0.0
         discrete_bonus = float(self.discrete.value)
-        return x + float(self.tensor.value) + text_bonus + discrete_bonus + float(self.continuous.value)
+        return (
+            x
+            + float(self.tensor.value)
+            + text_bonus
+            + discrete_bonus
+            + float(self.continuous.value)
+        )
 
 
 class Dataset:
