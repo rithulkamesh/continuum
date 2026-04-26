@@ -38,9 +38,13 @@ Primary signal is token reduction (`tokens_saved / (tokens_sent + tokens_saved)`
 
 ## Status
 
-- Research prototype
-- vLLM integration in progress
-- M1 partially validated: Azure token reduction is measurable; latency results remain noisy under network/provider variance
+- v1 release hardening in progress
+- Capability-driven backend dispatch implemented (tensor/token/cache)
+- MLX + libtorch tensor interoperability implemented with explicit conversion rules
+- CIR schema lock added (`schema/cir.fbs`) with serialization conformance tests
+- Python + C++ API docs pipelines wired (Sphinx + Doxygen + GitHub Pages workflow)
+- Packaging migrated to `continuum-ai` (import path `continuum`) with PyPI publish workflow
+- CI matrix active on Linux + macOS with coverage gates and fuzz workflow
 
 [![Star History Chart](https://api.star-history.com/chart?repos=rithulkamesh/continuum&type=date&legend=top-left)](https://www.star-history.com/?repos=rithulkamesh%2Fcontinuum&type=date&legend=top-left)
 
