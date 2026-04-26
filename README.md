@@ -39,7 +39,13 @@ Primary signal is token reduction (`tokens_saved / (tokens_sent + tokens_saved)`
 ## Install
 
 ```bash
-python -m pip install continuum
+python -m pip install continuum-ai
+```
+
+Import remains:
+
+```python
+import continuum
 ```
 
 ## Reproducible Example Validation
@@ -47,3 +53,28 @@ python -m pip install continuum
 ```bash
 PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py
 ```
+
+## API Docs
+
+Build Python docs locally:
+
+```bash
+python -m venv .venv-docs
+. .venv-docs/bin/activate
+pip install sphinx furo breathe
+PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
+```
+
+Then open:
+
+- `docs/api/python/_build/index.html`
+
+Build C++ docs locally:
+
+```bash
+doxygen Doxyfile
+```
+
+Then open:
+
+- `docs/api/cpp/html/index.html`
