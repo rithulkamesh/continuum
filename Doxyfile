@@ -12,3 +12,4 @@ QUIET                  = YES
 WARN_IF_UNDOCUMENTED   = NO
 FILE_PATTERNS          = *.hpp *.h
 USE_MDFILE_AS_MAINPAGE = README.md
+HAVE_DOT               = NO
