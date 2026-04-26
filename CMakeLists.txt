@@ -94,6 +94,7 @@ if(CONTINUUM_BUILD_PYTHON)
         bindings/pybind/bind_backend.cpp
     )
     target_link_libraries(_continuum PRIVATE continuum_core)
+    install(TARGETS _continuum DESTINATION continuum)
 endif()
 
 if(CONTINUUM_BUILD_TESTS)
