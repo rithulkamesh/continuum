@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+
+# Build artifacts
+build/
+build-tests/
+dist/
+*.egg-info/
+_skbuild/
+compile_commands.json
+cmake-build-*/
+
+# C/C++
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.dll
+*.exe
+
+# IDE/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Test, bench, coverage
+.coverage
+coverage.xml
+htmlcov/
+bench-results/
+
+# Logs and temp
+*.log
+tmp/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# tex
+spec.tex

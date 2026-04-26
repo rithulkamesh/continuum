@@ -1,0 +1,39 @@
+[build-system]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "continuum"
+version = "1.0.0"
+description = "Continuum AI framework"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "hypothesis>=6"]
+docs = ["sphinx>=7.4", "furo>=2024.7.18", "breathe>=4.35.0"]
+test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6"]
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "--cov=continuum --cov-report=term-missing --cov-fail-under=95"
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["python/continuum"]
+branch = true
+omit = ["python/continuum/benchmarks/*", "python/continuum/_native.py"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true

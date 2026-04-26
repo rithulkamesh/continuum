@@ -1,0 +1,14 @@
+PROJECT_NAME           = "Continuum C++ API"
+OUTPUT_DIRECTORY       = docs/api/cpp
+INPUT                  = include/continuum
+RECURSIVE              = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+FILE_PATTERNS          = *.hpp *.h
+USE_MDFILE_AS_MAINPAGE = README.md
