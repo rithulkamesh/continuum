@@ -1,6 +1,6 @@
 PROJECT_NAME           = "Continuum C++ API"
 OUTPUT_DIRECTORY       = docs/api/cpp
-INPUT                  = include/continuum
+INPUT                  = include/continuum README.md
 RECURSIVE              = YES
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO

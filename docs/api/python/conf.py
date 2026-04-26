@@ -16,6 +16,7 @@ templates_path = ["_templates"]
 exclude_patterns = []
 html_theme = "furo"
 html_title = "Continuum Python API"
+autodoc_mock_imports = ["torch", "_continuum", "continuum._native"]
 autodoc_default_options = {
     "members": True,
     "undoc-members": True,
