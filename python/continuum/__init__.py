@@ -1,5 +1,7 @@
 """Public Python API surface for Continuum."""
 
+from importlib import metadata as _metadata
+
 from . import nn
 from .frontend.optimizer import Optimizer
 from .frontend.param import Param
@@ -56,4 +58,9 @@ class LM:
         return f"{self.model_id}:{prompt}"
 
 
-__all__ = ["Optimizer", "Param", "program", "tool", "LM", "nn"]
+try:
+    __version__ = _metadata.version("continuum-ai")
+except _metadata.PackageNotFoundError:
+    __version__ = "0+local"
+
+__all__ = ["Optimizer", "Param", "program", "tool", "LM", "nn", "__version__"]

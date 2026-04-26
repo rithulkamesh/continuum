@@ -1,5 +1,6 @@
 try:
-    import _continuum as _c
+    import torch  # noqa: F401 - ensures libtorch runtime libs are available before native module load
+    from . import _continuum as _c
 except Exception as exc:  # pragma: no cover
     import importlib.util
     from pathlib import Path
@@ -10,7 +11,7 @@ except Exception as exc:  # pragma: no cover
         raise ImportError(
             "continuum native module '_continuum' is required; no Python fallback is available."
         ) from exc
-    spec = importlib.util.spec_from_file_location("_continuum", str(matches[0]))
+    spec = importlib.util.spec_from_file_location("continuum._continuum", str(matches[0]))
     if spec is None or spec.loader is None:
         raise ImportError("failed to load native module _continuum from build artifacts") from exc
     _c = importlib.util.module_from_spec(spec)

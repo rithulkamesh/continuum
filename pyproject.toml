@@ -1,14 +1,26 @@
 [build-system]
-requires = ["scikit-build-core>=0.9", "pybind11>=2.11"]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.11", "torch>=2.2"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "continuum"
+name = "continuum-ai"
 version = "1.0.0"
-description = "Continuum AI framework"
+description = "Unified runtime for token + tensor program execution across LLM and ML backends"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["torch>=2.2"]
+license = { file = "LICENSE" }
+authors = [{ name = "Continuum Authors" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: C++",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Interpreters",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "hypothesis>=6"]
@@ -17,6 +29,9 @@ test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6"]
 
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/continuum"]
+cmake.define.CONTINUUM_BUILD_PYTHON = "ON"
+cmake.define.CONTINUUM_BUILD_TESTS = "OFF"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]

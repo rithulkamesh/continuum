@@ -33,6 +33,9 @@ Primary signal is token reduction (`tokens_saved / (tokens_sent + tokens_saved)`
 - vLLM integration in progress
 - M1 partially validated: Azure token reduction is measurable; latency results remain noisy under network/provider variance
 
+[![Star History Chart](https://api.star-history.com/chart?repos=rithulkamesh/continuum&type=date&legend=top-left)](https://www.star-history.com/?repos=rithulkamesh%2Fcontinuum&type=date&legend=top-left)
+
+
 ## Install
 
 ```bash
