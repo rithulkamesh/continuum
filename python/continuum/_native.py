@@ -1,6 +1,6 @@
 try:
     import torch  # noqa: F401 - ensures libtorch runtime libs are available before native module load
-    from . import _continuum as _c
+    from . import _continuum as _c  # type: ignore[attr-defined]
 except Exception as exc:  # pragma: no cover
     import importlib.util
     from pathlib import Path
