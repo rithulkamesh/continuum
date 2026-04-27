@@ -105,6 +105,7 @@ Local outputs:
 - Code of Conduct: `CODE_OF_CONDUCT.md`
 - Security policy: `SECURITY.md`
 - Support guide: `SUPPORT.md`
+- Governance: `GOVERNANCE.md`
 
 Quick contributor setup:
 
