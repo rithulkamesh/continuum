@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any
 
-from continuum._native import GraphBuilder, NodeKind, eager_step
+from continuum._native import GraphBuilder, eager_step
 
 _active_builder: Any | None = None
 
