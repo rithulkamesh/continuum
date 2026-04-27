@@ -26,111 +26,96 @@
   </a>
 </p>
 
-Continuum is a unified execution runtime for LLM and ML programs.
-It is not just an API wrapper and not just orchestration glue.
-Continuum executes a shared intermediate representation (IR) that spans token generation and tensor computation inside one runtime.
+Continuum is a unified runtime for LLM and ML programs.
+It executes token generation and tensor computation through a shared intermediate representation (IR), so caching, dispatch, and interoperability are handled by one system instead of ad-hoc glue.
 
-## Why Continuum
+## Quick Start
 
-- **One IR, two worlds**: token ops and tensor ops in a single executable graph.
-- **Backend-agnostic caching**: reusable backend state handles enable cross-call prefix reuse without backend-specific app code.
-- **Capability-driven dispatch**: runtime routes ops by declared backend capability, not brittle string checks.
-- **Explicit interoperability**: cross-backend tensors are tagged and converted explicitly, never silently mixed.
-- **Native-ready architecture**: C++ core with ABI boundary prep for future dynamic backend loading.
-
-## Core Idea
-
-Continuum uses one IR to represent both token and tensor operations, then executes that graph through a single interpreter.
-KV caching is treated as a program-level concern rather than a backend-specific add-on.
-Backends receive reusable state handles through a common contract, so cache-aware execution can remain backend-agnostic.
-This allows the same execution model to drive cloud LLM calls, local LLM backends, and tensor workloads.
-
-## What Works Today
-
-- C++ execution engine with IR + interpreter
-- KV cache index with canonical prefix normalization
-- Azure backend (real network execution)
-- libtorch backend (tensor/training execution)
-- MLX backend (native tensor op path for Apple workflows)
-
-## Example
-
-See `examples/01_research_agent.py` for a paired benchmark workflow that exercises cache-aware token generation across backends.
-
-## Benchmarking Approach
-
-Benchmarks are run as paired trials (uncached vs cached on identical input), with warmup discarded and robust statistics reported (median/p50/p95).
-Primary signal is token reduction (`tokens_saved / (tokens_sent + tokens_saved)`), with latency ratio tracked as secondary due to provider/network noise.
-
-## Status
-
-- v1 release hardening in progress
-- Capability-driven backend dispatch implemented (tensor/token/cache)
-- MLX + libtorch tensor interoperability implemented with explicit conversion rules
-- CIR schema lock added (`schema/cir.fbs`) with serialization conformance tests
-- Python + C++ API docs pipelines wired (Sphinx + Doxygen + GitHub Pages workflow)
-- Packaging migrated to `continuum-ai` (import path `continuum`) with PyPI publish workflow
-- CI matrix active on Linux + macOS with coverage gates and fuzz workflow
-
-[![Star History Chart](https://api.star-history.com/chart?repos=rithulkamesh/continuum&type=date&legend=top-left)](https://www.star-history.com/?repos=rithulkamesh%2Fcontinuum&type=date&legend=top-left)
-
-
-## Install
+Install:
 
 ```bash
 python -m pip install continuum-ai
 ```
 
-Import remains:
+Use:
 
 ```python
 import continuum
 ```
 
-## Reproducible Example Validation
+Run a reproducible benchmark validation:
 
 ```bash
 PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py
 ```
 
-## Pre-commit Hooks
+Try the main example:
 
-Set up local quality gates (`ruff`, formatting, YAML/whitespace checks):
+- `examples/01_research_agent.py`
+
+## Why Continuum
+
+- **One runtime model**: token ops and tensor ops run in one executable graph.
+- **Backend-agnostic cache reuse**: reusable state handles enable cross-call prefix reuse without backend-specific app code.
+- **Capability-driven dispatch**: backends are selected by declared capabilities (tensor, token, cache).
+- **Explicit tensor interoperability**: cross-backend conversions are explicit and type-tagged.
+- **Native-first core**: C++ engine and ABI-focused design for long-term extensibility.
+
+## What Is Implemented
+
+- C++ execution engine with IR interpreter
+- KV cache index with canonical prefix normalization
+- Azure backend for real network execution
+- libtorch backend for tensor/training execution
+- MLX backend for Apple-native tensor paths
+
+## Current Status
+
+- v1 release hardening in progress
+- CIR schema lock with serialization conformance (`schema/cir.fbs`)
+- Linux and macOS CI matrix with coverage gates and fuzz workflow
+- PyPI packaging under `continuum-ai` (import path remains `continuum`)
+
+## Documentation
+
+- Python API docs: `https://ct.rithul.dev/python/`
+- C++ API docs: `https://ct.rithul.dev/cpp/`
+
+Build docs locally:
+
+```bash
+# Python docs
+python -m venv .venv-docs
+. .venv-docs/bin/activate
+pip install sphinx furo breathe
+PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
+
+# C++ docs
+doxygen Doxyfile
+```
+
+Local outputs:
+
+- `docs/api/python/_build/index.html`
+- `docs/api/cpp/html/index.html`
+
+## Community
+
+- Contributing guide: `CONTRIBUTING.md`
+- Code of Conduct: `CODE_OF_CONDUCT.md`
+- Security policy: `SECURITY.md`
+- Support guide: `SUPPORT.md`
+
+Quick contributor setup:
 
 ```bash
 pip install pre-commit
 pre-commit install
 pre-commit run --all-files
+pytest
 ```
 
-Note: generated docs/build outputs are excluded by default in `.pre-commit-config.yaml`.
-
-## API Docs
-
-Build Python docs locally:
-
-```bash
-python -m venv .venv-docs
-. .venv-docs/bin/activate
-pip install sphinx furo breathe
-PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
-```
-
-Then open:
-
-- `docs/api/python/_build/index.html`
-- GitHub Pages: `https://rithulkamesh.github.io/continuum/python/`
-
-Build C++ docs locally:
-
-```bash
-doxygen Doxyfile
-```
-
-Then open:
-
-- `docs/api/cpp/html/index.html`
-- GitHub Pages: `https://rithulkamesh.github.io/continuum/cpp/`
+[![Star History Chart](https://api.star-history.com/chart?repos=rithulkamesh/continuum&type=date&legend=top-left)](https://www.star-history.com/?repos=rithulkamesh%2Fcontinuum&type=date&legend=top-left)
 
 ## Citation
 
