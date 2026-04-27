@@ -40,6 +40,12 @@ bench-results/
 # Logs and temp
 *.log
 tmp/
+demo.mp4
+demo_logs_*.txt
+*.cast
+*.rec
+*.mp4
+demo*
 
 # Secrets / local env
 .env
@@ -48,3 +54,5 @@ tmp/
 
 # tex
 spec.tex
+# Paper artifacts
+paper/

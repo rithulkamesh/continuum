@@ -1,5 +1,31 @@
 # Continuum
 
+<p align="center">
+  <a href="https://github.com/rithulkamesh/continuum/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/rithulkamesh/continuum/actions/workflows/ci.yml/badge.svg">
+  </a>
+  <a href="https://pypi.org/project/continuum-ai/">
+    <img alt="PyPI" src="https://img.shields.io/pypi/v/continuum-ai.svg">
+  </a>
+  <a href="https://pypi.org/project/continuum-ai/">
+    <img alt="Python >=3.10" src="https://img.shields.io/pypi/pyversions/continuum-ai.svg">
+  </a>
+  <a href="./LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
+  </a>
+  <a href="https://ct.rithul.dev/python/">
+    <img alt="Python Docs" src="https://img.shields.io/badge/docs-python-blue">
+  </a>
+  <a href="https://ct.rithul.dev/cpp/">
+    <img alt="C++ Docs" src="https://img.shields.io/badge/docs-c%2B%2B-informational">
+  </a>
+</p>
+<p align="center">
+  <a href="https://www.producthunt.com/products/continuum-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-continuum-5" target="_blank" rel="noopener noreferrer">
+    <img alt="Continuum - A runtime that reuses computation across AI workflows | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1133105&amp;theme=light&amp;t=1777274020727">
+  </a>
+</p>
+
 Continuum is a unified execution runtime for LLM and ML programs.
 It is not just an API wrapper and not just orchestration glue.
 Continuum executes a shared intermediate representation (IR) that spans token generation and tensor computation inside one runtime.
