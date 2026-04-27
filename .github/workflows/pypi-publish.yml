@@ -48,6 +48,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: pip install --no-binary continuum-ai continuum-ai
+      - run: |
+          for i in 1 2 3 4 5 6; do
+            if pip install --no-cache-dir --index-url https://pypi.org/simple --no-binary continuum-ai continuum-ai; then
+              exit 0
+            fi
+            echo "PyPI package not visible yet (attempt $i), retrying..."
+            sleep 20
+          done
+          echo "Failed to install continuum-ai from PyPI after retries."
+          exit 1
       - run: python -c "import continuum; print('ok')"
       - run: python -c "import continuum._native"
