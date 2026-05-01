@@ -60,6 +60,7 @@ add_library(continuum_core
     src/runtime/scheduler.cpp
     src/runtime/cache.cpp
     src/runtime/checkpoint.cpp
+    src/runtime/session.cpp
     src/utils/logging.cpp
     src/compiler/typecheck.cpp
     src/compiler/rewrite.cpp

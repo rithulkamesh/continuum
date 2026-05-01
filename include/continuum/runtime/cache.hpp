@@ -36,9 +36,13 @@ class KVCacheIndex {
   std::optional<std::pair<CacheEntry, std::int32_t>> longest_prefix(
       const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens) const;
   void insert(CacheEntry entry, const std::vector<std::int32_t>& token_prefix);
+  void insert_unlocked(CacheEntry entry, const std::vector<std::int32_t>& token_prefix);
   void invalidate(void* backend_handle);
   void clear();
   std::size_t size() const;
+
+  bool save_metadata(const std::string& path) const;
+  bool load_metadata(const std::string& path);
 
  private:
   mutable std::mutex mu_;

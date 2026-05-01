@@ -7,6 +7,7 @@
 #include <continuum/ir/graph.hpp>
 #include <continuum/runtime/cache.hpp>
 #include <continuum/runtime/interpreter.hpp>
+#include <continuum/runtime/session.hpp>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -414,4 +415,216 @@ void bind_runtime(py::module_& m) {
       py::arg("discard_first_warmup") = true,
       py::arg("shared_prompt_tokens") = 3000);
   m.def("benchmark_deterministic_m1", &RunDeterministicM1Benchmark, py::arg("cost_per_token_ms") = 2.0);
+
+  py::enum_<continuum::runtime::ReusePolicyKind>(m, "ReusePolicyKind")
+      .value("Always", continuum::runtime::ReusePolicyKind::Always)
+      .value("Never", continuum::runtime::ReusePolicyKind::Never)
+      .value("ThresholdPrefixLen", continuum::runtime::ReusePolicyKind::ThresholdPrefixLen)
+      .export_values();
+
+  py::class_<continuum::runtime::ReusePolicy>(m, "ReusePolicy")
+      .def(py::init<>())
+      .def_static("always", &continuum::runtime::ReusePolicy::always)
+      .def_static("never", &continuum::runtime::ReusePolicy::never)
+      .def_static("threshold", &continuum::runtime::ReusePolicy::threshold, py::arg("min_len"))
+      .def_readwrite("kind", &continuum::runtime::ReusePolicy::kind)
+      .def_readwrite("min_prefix_len", &continuum::runtime::ReusePolicy::min_prefix_len);
+
+  py::class_<continuum::runtime::ReuseStepRecord>(m, "ReuseStepRecord")
+      .def_readwrite("node_name", &continuum::runtime::ReuseStepRecord::node_name)
+      .def_readwrite("cache_hit", &continuum::runtime::ReuseStepRecord::cache_hit)
+      .def_readwrite("prefix_hit_len", &continuum::runtime::ReuseStepRecord::prefix_hit_len)
+      .def_readwrite("total_tokens", &continuum::runtime::ReuseStepRecord::total_tokens)
+      .def_readwrite("tokens_saved", &continuum::runtime::ReuseStepRecord::tokens_saved)
+      .def_readwrite("tokens_sent", &continuum::runtime::ReuseStepRecord::tokens_sent)
+      .def_readwrite("compute_steps", &continuum::runtime::ReuseStepRecord::compute_steps);
+
+  py::class_<continuum::runtime::ReuseMetrics>(m, "ReuseMetrics")
+      .def_readwrite("session_id", &continuum::runtime::ReuseMetrics::session_id)
+      .def_readwrite("steps", &continuum::runtime::ReuseMetrics::steps)
+      .def_readwrite("total_lookups", &continuum::runtime::ReuseMetrics::total_lookups)
+      .def_readwrite("total_hits", &continuum::runtime::ReuseMetrics::total_hits)
+      .def_readwrite("total_tokens_saved", &continuum::runtime::ReuseMetrics::total_tokens_saved)
+      .def_readwrite("total_tokens_processed", &continuum::runtime::ReuseMetrics::total_tokens_processed)
+      .def_readwrite("run_count", &continuum::runtime::ReuseMetrics::run_count)
+      .def("hit_rate", &continuum::runtime::ReuseMetrics::hit_rate)
+      .def("token_reduction_ratio", &continuum::runtime::ReuseMetrics::token_reduction_ratio)
+      .def("reset", &continuum::runtime::ReuseMetrics::reset);
+
+  py::class_<continuum::runtime::Session>(m, "Session")
+      .def(py::init([](const std::string& id, py::object backend_registry, std::size_t max_cache) {
+             auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
+             return new continuum::runtime::Session(id, reg, max_cache);
+           }),
+           py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192)
+      .def("run", [](continuum::runtime::Session& self, const continuum::ir::Graph& graph,
+                     const std::unordered_map<continuum::ir::NodeId, continuum::Value>& inputs) {
+             return self.run(graph, inputs);
+           })
+      .def_property("policy", [](const continuum::runtime::Session& self) -> const continuum::runtime::ReusePolicy& {
+        return self.policy();
+      }, [](continuum::runtime::Session& self, const continuum::runtime::ReusePolicy& p) {
+        self.set_policy(p);
+      })
+      .def("metrics", [](const continuum::runtime::Session& self) -> const continuum::runtime::ReuseMetrics& {
+        return self.metrics();
+      }, py::return_value_policy::reference_internal)
+      .def("reset_metrics", &continuum::runtime::Session::reset_metrics)
+      .def("save_cache_metadata", &continuum::runtime::Session::save_cache_metadata)
+      .def("load_cache_metadata", &continuum::runtime::Session::load_cache_metadata)
+      .def("cache_size", [](const continuum::runtime::Session& self) { return self.cache().size(); })
+      .def_property_readonly("id", &continuum::runtime::Session::id)
+      .def_property_readonly("run_count", &continuum::runtime::Session::run_count);
+
+  m.def("run_session_benchmark", [](double cost_per_token_ms, int num_steps,
+                                     int prefix_tokens, int suffix_tokens,
+                                     bool use_policy_threshold, int threshold) -> py::dict {
+    if (cost_per_token_ms <= 0.0 || num_steps < 1 || prefix_tokens < 0 || suffix_tokens < 0) {
+      throw std::runtime_error("invalid benchmark parameters");
+    }
+
+    continuum::backend::BackendRegistry registry;
+    registry.register_backend("default", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+    continuum::runtime::Session session("bench", registry);
+
+    if (use_policy_threshold) {
+      session.set_policy(continuum::runtime::ReusePolicy::threshold(threshold));
+    }
+
+    py::list runs;
+    for (int run = 0; run < num_steps; ++run) {
+      session.reset_metrics();
+
+      auto t0 = std::chrono::steady_clock::now();
+      {
+        continuum::ir::Node input_node;
+        input_node.kind = continuum::ir::NodeKind::PromptOp;
+        input_node.debug_name = "input_" + std::to_string(run + 1);
+
+        continuum::ir::Graph g;
+        auto input_id = g.add_node(input_node);
+        continuum::ir::Node token_node;
+        token_node.kind = continuum::ir::NodeKind::TokenOp;
+        token_node.payload = continuum::ir::TokenOpPayload{"generate", "fake/m1", 0.0f, 128};
+        token_node.debug_name = "step_" + std::to_string(run + 1);
+        token_node.inputs.push_back(input_id);
+        g.add_node(token_node);
+
+        std::string prompt(prefix_tokens, 'P');
+        prompt += " step" + std::to_string(run + 1) + ": query variant " + std::to_string(run);
+
+        std::unordered_map<continuum::ir::NodeId, continuum::Value> inputs;
+        inputs[input_id] = continuum::Value{prompt};
+
+        session.run(g, inputs);
+      }
+      auto t1 = std::chrono::steady_clock::now();
+
+      const auto& m = session.metrics();
+      py::dict rd;
+      rd["run"] = run + 1;
+      rd["cache_size"] = static_cast<int>(session.cache_size());
+      rd["hit_rate"] = m.hit_rate();
+      rd["token_reduction"] = m.token_reduction_ratio();
+      rd["total_lookups"] = static_cast<int>(m.total_lookups);
+      rd["total_hits"] = static_cast<int>(m.total_hits);
+      rd["total_tokens_saved"] = static_cast<int>(m.total_tokens_saved);
+      rd["total_tokens_processed"] = static_cast<int>(m.total_tokens_processed);
+      rd["latency_ms"] = static_cast<double>(
+          std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count()) / 1000.0;
+      runs.append(rd);
+    }
+
+    const auto& final_metrics = session.metrics();
+    py::dict out;
+    out["runs"] = runs;
+    out["final_cache_size"] = static_cast<int>(session.cache_size());
+    out["total_runs"] = num_steps;
+    out["prefix_tokens"] = prefix_tokens;
+    out["suffix_tokens"] = suffix_tokens;
+    return out;
+  }, py::arg("cost_per_token_ms") = 2.0, py::arg("num_steps") = 20,
+     py::arg("prefix_tokens") = 30, py::arg("suffix_tokens") = 20,
+     py::arg("use_policy_threshold") = false, py::arg("threshold") = 5);
+
+  m.def("run_cold_start_benchmark", [](const std::string& cache_path, double cost_per_token_ms,
+                                        int steps_warm, int steps_cold) -> py::dict {
+    continuum::backend::BackendRegistry registry;
+    registry.register_backend("default", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+
+    py::dict warm_run;
+    py::dict cold_run;
+
+    auto run_steps = [&](const std::string& label, bool load_cache) -> py::dict {
+      continuum::runtime::Session session(label + "_session", registry);
+      if (load_cache) {
+        session.load_cache_metadata(cache_path);
+      }
+
+      int hits = 0;
+      int total = 0;
+      double total_no_cache_ms = 0.0;
+      double total_with_cache_ms = 0.0;
+
+      py::list step_list;
+      for (int i = 0; i < steps_warm; ++i) {
+        {
+          continuum::ir::Node input_node;
+          input_node.kind = continuum::ir::NodeKind::PromptOp;
+          input_node.debug_name = "input_warm_" + std::to_string(i + 1);
+
+          continuum::ir::Graph g;
+          auto input_id = g.add_node(input_node);
+          continuum::ir::Node token_node;
+          token_node.kind = continuum::ir::NodeKind::TokenOp;
+          token_node.payload = continuum::ir::TokenOpPayload{"generate", "fake/m1", 0.0f, 128};
+          token_node.debug_name = "warm_step_" + std::to_string(i + 1);
+          token_node.inputs.push_back(input_id);
+          g.add_node(token_node);
+
+          std::string prompt(30, 'P');
+          prompt += " step" + std::to_string(i + 1);
+
+          std::unordered_map<continuum::ir::NodeId, continuum::Value> inputs;
+          inputs[input_id] = continuum::Value{prompt};
+
+          auto result = session.run(g, inputs);
+          (void)result;
+        }
+
+        const auto& m = session.metrics();
+        int step_hits = static_cast<int>(m.total_hits);
+        hits += step_hits;
+        total++;
+
+        py::dict sr;
+        sr["step"] = i + 1;
+        sr["cache_hit"] = step_hits > 0;
+        sr["cache_size"] = static_cast<int>(session.cache_size());
+        step_list.append(sr);
+        session.reset_metrics();
+      }
+
+      session.save_cache_metadata(cache_path);
+
+      py::dict d;
+      d["steps"] = step_list;
+      d["total_hits"] = hits;
+      d["total_steps"] = total;
+      d["hit_rate"] = total > 0 ? static_cast<double>(hits) / total : 0.0;
+      d["final_cache_size"] = static_cast<int>(session.cache_size());
+      return d;
+    };
+
+    warm_run = run_steps("warm", false);
+    cold_run = run_steps("cold", true);
+
+    py::dict out;
+    out["warm_run"] = warm_run;
+    out["cold_run"] = cold_run;
+    out["cache_path"] = cache_path;
+    return out;
+  }, py::arg("cache_path") = "/tmp/continuum_cache.bin",
+     py::arg("cost_per_token_ms") = 2.0,
+     py::arg("steps_warm") = 5, py::arg("steps_cold") = 5);
 }

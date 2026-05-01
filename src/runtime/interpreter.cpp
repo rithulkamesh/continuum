@@ -1,4 +1,5 @@
 #include <continuum/runtime/interpreter.hpp>
+#include <continuum/runtime/session.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -107,8 +108,9 @@ std::vector<continuum::Value> NormalizeTensorInputs(
 
 }  // namespace
 
-Interpreter::Interpreter(backend::BackendRegistry& backends, KVCacheIndex& cache)
-    : backends_(backends), cache_(cache) {}
+Interpreter::Interpreter(backend::BackendRegistry& backends, KVCacheIndex& cache,
+                         const ReusePolicy* policy)
+    : backends_(backends), cache_(cache), policy_(policy) {}
 
 continuum::Value convert_value_for_backend(const continuum::Value& value, const std::string& target_backend) {
   if (const auto* t = std::get_if<continuum::TensorValue>(&value)) {
@@ -305,11 +307,15 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
         payload == nullptr ? 0 : payload->max_tokens};
     std::optional<continuum::runtime::CacheEntry> cache_hit;
     std::int32_t prefix_len = 0;
-    if (payload != nullptr && !input_tokens.empty()) {
+    const bool policy_allows_cache = (policy_ == nullptr || policy_->kind != ReusePolicyKind::Never);
+    if (policy_allows_cache && payload != nullptr && !input_tokens.empty()) {
       auto hit = cache_.longest_prefix(payload->model_id, decode_params, input_tokens);
       if (hit.has_value()) {
-        cache_hit = hit->first;
-        prefix_len = std::min<std::int32_t>(hit->second, static_cast<std::int32_t>(input_tokens.size()));
+        const std::int32_t hit_len = std::min<std::int32_t>(hit->second, static_cast<std::int32_t>(input_tokens.size()));
+        if (policy_ == nullptr || policy_->should_attempt(input_tokens, hit_len)) {
+          cache_hit = hit->first;
+          prefix_len = hit_len;
+        }
       }
     }
     const std::int32_t remaining_tokens =
