@@ -6,16 +6,20 @@
 #include <continuum/runtime/cache.hpp>
 #include <continuum/runtime/scheduler.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <unordered_map>
 
 namespace continuum::runtime {
 
+struct ReusePolicy;
+
 continuum::Value convert_value_for_backend(const continuum::Value& value, const std::string& target_backend);
 
 class Interpreter {
  public:
-  explicit Interpreter(backend::BackendRegistry& backends, KVCacheIndex& cache);
+  explicit Interpreter(backend::BackendRegistry& backends, KVCacheIndex& cache,
+                       const ReusePolicy* policy = nullptr);
   std::vector<continuum::Value> run(
       const ir::Graph& g, const std::unordered_map<ir::NodeId, continuum::Value>& inputs);
   Checkpoint run_until(ir::NodeId node_id);
@@ -40,6 +44,7 @@ class Interpreter {
 
   backend::BackendRegistry& backends_;
   KVCacheIndex& cache_;
+  const ReusePolicy* policy_;
   Scheduler scheduler_;
   std::optional<ActiveExecution> active_;
 };

@@ -30,6 +30,13 @@ benchmark_azure_agent = _c.runtime.benchmark_azure_agent
 benchmark_vllm_agent = getattr(_c.runtime, "benchmark_vllm_agent", None)
 benchmark_agent_paired = getattr(_c.runtime, "benchmark_agent_paired", None)
 benchmark_deterministic_m1 = getattr(_c.runtime, "benchmark_deterministic_m1", None)
+run_session_benchmark = getattr(_c.runtime, "run_session_benchmark", None)
+run_cold_start_benchmark = getattr(_c.runtime, "run_cold_start_benchmark", None)
+Session = getattr(_c.runtime, "Session", None)
+ReusePolicy = getattr(_c.runtime, "ReusePolicy", None)
+ReusePolicyKind = getattr(_c.runtime, "ReusePolicyKind", None)
+ReuseMetrics = getattr(_c.runtime, "ReuseMetrics", None)
+ReuseStepRecord = getattr(_c.runtime, "ReuseStepRecord", None)
 
 
 def _missing_runtime_fn(name: str):
@@ -70,3 +77,9 @@ if benchmark_deterministic_m1 is None:
             "meets_cache_hit_target": True,
             "meets_latency_target": True,
         }
+
+
+if run_session_benchmark is None:
+    run_session_benchmark = _missing_runtime_fn("run_session_benchmark")
+if run_cold_start_benchmark is None:
+    run_cold_start_benchmark = _missing_runtime_fn("run_cold_start_benchmark")

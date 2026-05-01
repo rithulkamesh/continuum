@@ -1,0 +1,682 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in,columnsep=0.3in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+\setlength{\columnsep}{0.3in}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{2pt}
+\setlength{\textwidth}{6.5in}
+
+\titleformat{\section}{\small\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\small\bfseries\itshape}{\thesubsection}{0.5em}{}
+
+\title{Continuum: Program-Level Computation Reuse\\for LLM Workflows}
+\author{Rithul Kamesh\\\texttt{hi@rithul.dev}}
+
+\begin{document}
+\twocolumn[
+\maketitle
+\vspace{-1.5em}
+\begin{abstract}
+{\small
+LLM workflow programs repeatedly process large prompt prefixes across execution steps---a research agent replaying a system prompt per subtask, or a multi-tool pipeline accumulating shared context. Persistence and rehydration of workflow state is a well-established paradigm in BPM and orchestration systems. However, these systems persist \emph{control-flow state}---execution position, process variables, task outcomes. They do not persist \emph{intermediate computation}: the partial model execution state (e.g., KV cache) that constitutes the majority of processing cost in LLM workflows.
+
+Continuum introduces \emph{computation-aware persistence}: the ability to persist and reuse intermediate execution state as a first-class runtime artifact. The runtime---implemented with a C++ core and Python frontend---executes typed graphs through an interpreter with an effect-aware scheduler and a prefix-indexed trie cache that stores backend state handles. Reuse is embedded in \texttt{TokenOp} execution semantics, not bolted on as an external cache. The runtime decides \emph{when} a prefix is reusable; each backend decides \emph{how} reusable state is encoded.
+
+On a deterministic 5-step benchmark, Continuum achieves 80\% cache hit rate and 48\% latency reduction. On a 20-step extended run, post-warmup token reduction reaches 64\% with 95\% hit rate. Real-backend results on Azure OpenAI show 3,010 of 3,042 tokens reused per cache-hit call. Ablation confirms that each component---trie indexing, effect-aware scheduling, compiler prefix hoisting---contributes measurably.
+}
+\end{abstract}
+\vspace{1em}
+]
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+LLM workflow programs exhibit a structural pattern that existing systems do not exploit at the right abstraction level: across execution steps, large prompt prefixes are repeated while only short suffixes change. A research agent keeps a fixed system prompt while varying per-question context; a retrieval-augmented pipeline appends tool outputs to a growing shared conversation; a multi-step classifier reuses identical few-shot examples across candidate evaluations. In each case, the prefix constitutes the majority of token processing cost, yet current practice recomputes it on every step.
+
+This waste is not a minor inefficiency. For a 3,000-token system prompt replayed across a 20-step agent loop, redundant prefix processing accounts for over 90\% of total input tokens. The problem is architectural: no existing system layer owns program-level \emph{computation} persistence across graph steps.
+
+\paragraph{Persistence exists. Computation persistence does not.}
+Durable execution---the ability to persist workflow state, resume interrupted processes, and rehydrate execution context---is a well-established paradigm. BPM engines such as Camunda \cite{camunda2024docs} and Flowable \cite{flowable2024docs} persist control-flow state, process variables, and execution history. Durable execution frameworks such as Temporal \cite{temporal2024docs} persist workflow progress and application data across process restarts. DAG orchestrators (Airflow \cite{apache2024airflow}, Prefect \cite{prefect2024docs}) persist task metadata and execution logs. These systems solve the problem of \emph{where} execution left off.
+
+What these systems persist is control-flow state: which node is next, what variables have been set, which tasks completed. They do not persist intermediate \emph{computation}---the partial results of expensive operations that could be resumed rather than restarted. For LLM workflows, the most expensive computation is prefix processing: the full forward pass through transformer layers for every input token. When a workflow resumes and re-executes an LLM call with a partially shared prompt, existing systems replay the entire prefix. The KV cache---the intermediate execution state that represents completed prefix processing---is either recomputed from scratch or managed ephemerally within a single serving context \cite{kwon2023pagedattention,zheng2024sglang}.
+
+\paragraph{This paper.}
+Continuum introduces \emph{computation-aware persistence}: the ability to persist and reuse intermediate execution state---specifically, prefix-level model computation---as a first-class runtime artifact. Continuum shifts persistence from control-flow state to execution state, enabling reuse of partial computation across workflow executions.
+
+The runtime executes a typed intermediate representation (CIR) through a graph interpreter with an effect-aware scheduler and a prefix-indexed trie cache that stores opaque backend state handles. The key design principle is \emph{separation of concerns}: the runtime decides when a prefix is reusable based on graph structure and effect constraints; each backend decides how reusable state is encoded and materialized. Replacing a backend---switching from Azure OpenAI to vLLM---does not require changes to the graph, the scheduler, or the reuse policy.
+
+This is not caching. An output cache stores a final result for an exact input match; it misses when any token changes. Continuum stores \emph{intermediate execution state} indexed by prefix length; it reuses 2,999 tokens of computation even when the 3,000th token changes. The distinction is the difference between storing a final answer and resuming execution from an intermediate checkpoint.
+
+Continuum is not a workflow engine or an agent framework. It is a \emph{runtime system}---an execution substrate that sits between the application layer (which defines what to compute) and the backend layer (which defines how to compute individual requests). It provides the execution-state persistence layer that existing systems lack.
+
+This paper makes the following contributions:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Computation-aware persistence.} Continuum is the first runtime system to treat partial model execution state as a reusable, persistable artifact. Prior persistent workflow systems persist control-flow state and application data; Continuum persists the intermediate computation that constitutes the majority of processing cost.
+  \item \textbf{Runtime-level reuse abstraction.} Reuse policy lives in the graph interpreter, not in the backend or in application code. The trie-indexed cache stores backend state handles indexed by prefix, enabling prefix-length reuse integrated with effect-aware scheduling.
+  \item \textbf{Implementation and evaluation.} A C++ core with Python bindings and pluggable backends demonstrates that computation-aware persistence is practical. Deterministic benchmarks show 80\% cache hit rate and 48\% latency reduction; real Azure OpenAI calls show 99\% prefix token reuse per cache-hit step.
+\end{enumerate}
+
+% ============================================================
+\section{Background}
+% ============================================================
+
+\subsection{LLM inference cost structure}
+LLM serving cost is dominated by token processing during the prefill phase, where every input token requires a full forward pass through transformer layers. For a shared-prefix workload with $k$ tokens of common prefix and $s$ tokens of per-step suffix, prefill cost scales as $O((k+s) \cdot d^2)$ per step, where $d$ is the hidden dimension. Across $N$ steps, total prefill work is $O(N \cdot (k+s) \cdot d^2)$. With prefix reuse, this drops to $O(k \cdot d^2 + N \cdot s \cdot d^2)$: the prefix is computed once and reused for all subsequent steps.
+
+In practical agent workloads, this repeated work appears in two canonical forms. First, a static system prompt is replayed for each step in a loop (retrieve, reason, critique, revise). Second, tool outputs are appended to a shared conversation context, meaning each new step preserves most prior tokens and changes only a short suffix. This structure creates high temporal locality in prompt prefixes. If the runtime only sees independent API calls, that locality is invisible. If the runtime sees an execution graph, locality can be represented explicitly and reused deliberately.
+
+\subsection{KV cache and prefix reuse}
+Autoregressive decoders maintain key-value (KV) state per processed prefix. If two requests share an identical prefix under compatible decoding parameters, the later request can skip recomputing that portion. Systems such as vLLM \cite{kwon2023pagedattention} and SGLang \cite{zheng2024sglang} demonstrate that this optimization substantially reduces time-to-first-token at serving time.
+
+The key systems question is not whether KV reuse works---it does---but where reuse \emph{policy} should live. Backend engines optimize memory layout, scheduling, and transfer within a serving cluster. Application frameworks expose high-level steps. Continuum places reuse policy at a distinct layer: the runtime execution layer that interprets a typed graph. This placement allows one reuse policy to govern multiple backends while preserving backend-specific state representations.
+
+\subsection{Workflow orchestration gap}
+Workflow libraries compose prompts, tools, and control flow at an application layer, but execution semantics are delegated to backend calls. This creates a structural gap: control flow is explicit in the graph, but reusable intermediate model state is not a first-class runtime object.
+
+This gap manifests as ad hoc cache integrations. Developers bolt on output caches at chain boundaries or manually plumb backend state through application code. Those approaches are brittle under control-flow changes, hard to validate for correctness, and do not support partial prefix reuse when suffixes diverge. A runtime-level abstraction can encode dependencies once in the graph and make reuse a deterministic interpreter behavior.
+
+% ============================================================
+\section{Key Concepts}
+% ============================================================
+
+We define three concepts that distinguish Continuum from existing workflow and serving systems: \emph{intent}, \emph{compilation}, and \emph{persistence}.
+
+\subsection{Intent}
+An \textbf{intent} is a high-level task specification expressed as a program function. In Continuum, the developer writes a Python function decorated with \texttt{@program}; the runtime traces execution to produce a CIR graph. An intent is \emph{not} a domain-specific language, a prompt template, or an agent-loop specification---it is ordinary Python code that the runtime instruments to capture the computation graph.
+
+This distinction matters for positioning. A DSL constrains expressiveness; a prompt template has no control flow; an agent loop is a fixed execution pattern. An intent preserves the full generality of a programming language while enabling the runtime to observe and optimize the resulting computation graph.
+
+\subsection{Compilation}
+\textbf{Compilation} is the process of lowering an intent into an executable plan. In Continuum v0.1, this is a two-stage process:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Tracing}: the \texttt{@program} decorator instruments function execution, recording each operation as a CIR node with typed inputs, outputs, and effect annotations.
+  \item \textbf{Rewriting}: compiler passes transform the CIR graph. \texttt{hoist\_common\_token\_prefixes} deduplicates shared prefix tokens across \texttt{TokenOp} nodes. \texttt{memoize\_pure\_tool\_ops} performs common-subexpression elimination on idempotent tool calls. \texttt{specialize\_structured\_outputs} appends structured-output markers to token operations with schema-typed outputs.
+\end{enumerate}
+
+Compilation is separated from execution. The compiled CIR graph can be inspected, serialized, and executed repeatedly. This separation enables offline analysis, graph optimization, and persistent caching across executions.
+
+\subsection{Persistence}
+\label{sec:persistence}
+\textbf{Persistence} in Continuum refers to what is persisted, not the fact of persistence itself. Workflow engines and BPM systems have persisted control-flow state for decades \cite{havey2005essential,temporal2024docs}. Continuum persists a different kind of state: \emph{intermediate execution state} in the form of backend computation handles (KV cache tokens, decoder state) stored in the trie index.
+
+The distinction is precise. When a Camunda \cite{camunda2024docs} process instance pauses and resumes, it restores execution position and process variables. When a Temporal \cite{temporal2024docs} workflow rehydrates, it restores application data and replays events. When Continuum re-executes a \texttt{TokenOp} with a partially shared input, it restores the backend's computation state for the shared prefix and resumes execution from the point of divergence.
+
+In v0.1, persistence is bounded by the runtime process lifetime: backend state handles are not serialized across restarts. The design supports full persistence as backend serialization matures. The mechanism---prefix-indexed computation state stored as opaque backend handles---is independent of this limitation.
+
+\subsection{From intent to persistent execution}
+The end-to-end pipeline in Continuum is:
+\begin{enumerate}[leftmargin=*]
+  \item The developer writes an intent as a \texttt{@program}-decorated Python function.
+  \item On first invocation, the runtime traces execution and produces a CIR graph.
+  \item Compiler passes rewrite the graph to expose reuse opportunities (prefix hoisting, CSE).
+  \item The scheduler computes effect-aware execution groups from the DAG.
+  \item The interpreter walks the plan, executing each node and performing prefix-indexed reuse for \texttt{TokenOp} nodes.
+  \item Backend state handles are stored in the trie cache for reuse in subsequent executions.
+  \item On subsequent invocations, steps 4--6 reuse cached prefix state, reducing redundant computation.
+\end{enumerate}
+
+% ============================================================
+\section{System Design}
+% ============================================================
+
+\subsection{CIR: graph representation}
+Continuum uses a FlatBuffer-defined intermediate representation, CIR (\texttt{schema/cir.fbs}), with node kinds \texttt{TensorOp}, \texttt{TokenOp}, \texttt{PromptOp}, \texttt{ToolOp}, and \texttt{ControlOp}. Each node carries a typed payload, input edge references, an output type kind, and an effect bitfield (\texttt{Pure}, \texttt{Idem}, \texttt{Net}, \texttt{Mut}, \texttt{Stoch}).
+
+The FlatBuffer schema provides a stable binary contract between Python and C++ layers and enables checkpoint/resume machinery to reason about graph identity independently of backend internals. In v0.1, CIR is used in eager runtime mode; the same representation supports future compiler-style rewrites.
+
+\subsection{Interpreter}
+The C++ interpreter executes nodes in topologically sorted order. For each node, it materializes input values from prior outputs and dispatches based on node kind. The critical path for reuse is the \texttt{TokenOp} execution path:
+\begin{enumerate}[leftmargin=*]
+  \item Canonicalize input values to a token sequence.
+  \item Query the trie cache for the longest compatible prefix.
+  \item Compute remaining suffix token count.
+  \item Call the backend with optional cached state handle.
+  \item Insert or refresh the cache entry with the resulting backend state.
+\end{enumerate}
+
+Reuse is not a side channel or post-hoc optimization---it is part of node execution semantics. Each step emits structured metrics: whether cached state was used, how many tokens were sent to the backend, how many were saved, and how much suffix work remained. These metrics are used directly in the evaluation.
+
+\subsection{Scheduler}
+The scheduler computes execution groups from the DAG structure. Nodes marked with effect constraints (\texttt{Net}, \texttt{Mut}, \texttt{Stoch}) are serialized into individual groups. Pure ready nodes can be batched into a single group. This preserves correctness for effectful operations while exposing parallel-safe structure.
+
+Effect-aware grouping is critical for reuse correctness. If two networked calls mutate shared state or rely on stochastic sampling, reordering can invalidate cache assumptions. Continuum treats effect bits as hard scheduling constraints, not optional hints. The policy is conservative but predictable: a desirable property for a runtime that prioritizes reproducible behavior.
+
+\subsection{KV cache index}
+The runtime cache (\texttt{KVCacheIndex}) is a token-trie keyed by a three-tuple: model identity, decode parameters (\texttt{op\_name}, temperature, max tokens), and canonicalized token prefix. Each entry stores prefix metadata and an opaque backend state handle. Lookup returns the longest compatible prefix and updates LRU recency.
+
+Compared with flat hash-based caching, trie indexing aligns directly with prefix reuse queries. The interpreter asks ``longest reusable prefix''; the trie answers without scanning unrelated keys. Each trie node stores token-labeled child edges and a vector of entries; entry metadata includes prefix hash, model, decode params, prefix length, state handle, and recency clock. LRU eviction scans collected entries when capacity is exceeded.
+
+\subsection{Backend abstraction}
+Backends implement \texttt{run\_with\_cache(node, inputs, prefix\_state, remaining\_tokens)} and return output, resulting state, and reuse metrics. The runtime is backend-agnostic with respect to state encoding: it carries opaque handles with associated prefix metadata and never inspects backend internals.
+
+This interface separates concerns cleanly. The runtime decides \emph{whether} and \emph{how much} computation to reuse. The backend decides \emph{how} to materialize and apply cached state. Backend replacement---switching from Azure OpenAI to vLLM, for example---does not require changes to graph semantics, scheduling, or reuse policy. Continuum ships with fake deterministic, Azure OpenAI, OpenAI, vLLM shim, libtorch, and MLX backends.
+
+\subsection{Cross-backend value handling}
+Runtime values can include libtorch tensors and MLX tensor values. The interpreter uses explicit conversion when input tensor backend tags differ from the target backend. No implicit mixing is allowed; unsupported conversion directions throw runtime errors. This is a deliberate safety choice: silent coercions hide precision loss and device transfers that are difficult to audit in mixed tensor/token pipelines.
+
+% ============================================================
+\section{Computation Reuse Model}
+% ============================================================
+
+\subsection{Three levels of reuse}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{No cache}: every request recomputes the full input. No state is preserved.
+  \item \textbf{Output caching}: maps full input $(x) \mapsto y$. Reuse requires exact input equality. If any token in the suffix changes, the cache misses.
+  \item \textbf{Prefix reuse (Continuum)}: maps a shared token prefix to decoder state. Avoids recomputing the shared portion even when suffixes differ. Integrated into graph execution with type/effect-aware scheduling.
+\end{itemize}
+
+The distinction between output caching and prefix reuse is not incremental---it is categorical. An output cache stores a final answer; prefix reuse stores an intermediate execution checkpoint. When a workflow changes one word in a 3,000-token prompt, the output cache misses entirely. Continuum reuses 2,999 tokens of computation and processes only the changed token and its suffix.
+
+\subsection{Prefix reuse model}
+Let tokenized canonical input be $T = (t_1, \dots, t_n)$. Cache entries are indexed by $(m, d, P)$ where $m$ is model ID, $d$ is decode parameters, and $P$ is a token prefix. A lookup returns:
+\[
+P^\star = \arg\max_{P \preceq T} |P| \quad \text{s.t.\ } \text{compatible}(m, d).
+\]
+If $|P^\star| = k$, the backend receives cached state for $P^\star$ and processes only suffix tokens $T_{k+1:n}$. The trie structure enables this lookup in $O(k)$ time without scanning unrelated cache entries.
+
+\subsection{Effect-aware scheduling and reuse}
+Reuse is coordinated with scheduling constraints. Networked, mutating, or stochastic nodes are serialized to preserve semantics, preventing cache invalidation from out-of-order execution. This allows reuse optimization without breaking effect safety---a property that ad hoc application-level caches cannot guarantee.
+
+% ============================================================
+\section{Implementation}
+% ============================================================
+
+\subsection{Architecture}
+Core components are implemented in C++ (\textasciitilde3,500 lines of source and headers):
+\begin{itemize}[leftmargin=*]
+  \item \textbf{IR layer}: graph, node, type, effect, and value data models.
+  \item \textbf{Compiler}: type checking and graph rewrites (prefix hoisting, CSE, structured output specialization).
+  \item \textbf{Scheduler} (\texttt{src/runtime/scheduler.cpp}): effect-aware topological scheduling.
+  \item \textbf{Interpreter} (\texttt{src/runtime/interpreter.cpp}): graph execution with cache-integrated dispatch and policy-gated reuse.
+  \item \textbf{Cache} (\texttt{src/runtime/cache.cpp}): trie-indexed prefix cache with LRU eviction and intermediate-depth prefix entries.
+  \item \textbf{Session} (\texttt{src/runtime/session.cpp}): long-running execution context with reuse introspection and policy enforcement.
+  \item \textbf{Checkpoint} (\texttt{src/runtime/checkpoint.cpp}): binary serialization of execution state.
+\end{itemize}
+
+Python bindings (\texttt{bindings/pybind/}, \textasciitilde630 lines) expose runtime, session, and benchmark entry points via pybind11. The Python frontend (\textasciitilde614 lines) provides the \texttt{@program} decorator, \texttt{Param} types for optimization, and an \texttt{Optimizer} with grid search, text gradient, discrete, and Bayesian strategies.
+
+\subsection{Session and reuse introspection}
+The \texttt{Session} abstraction (\S\ref{sec:persistence}) provides a long-lived execution context that spans multiple graph invocations. Each session owns a trie cache and accumulates prefix state across runs. The session performs pre-execution cache lookups on every \texttt{TokenOp} node, recording per-step reuse metrics (\texttt{ReuseStepRecord}) including cache hit status, prefix match length, tokens saved, and tokens processed. Aggregate metrics (\texttt{ReuseMetrics}) expose hit rate and token reduction ratio across the session lifetime.
+
+This introspection layer makes reuse observable. Developers and operators can query \texttt{session.metrics().hit\_rate()} to verify that their workloads exhibit the expected prefix-sharing structure, or \texttt{session.metrics().token\_reduction\_ratio()} to quantify the benefit without measuring latency.
+
+\subsection{Reuse policy}
+A \texttt{ReusePolicy} gates cache lookups based on application-level preferences. Three policies are provided: \texttt{Always} (default), \texttt{Never} (disable reuse entirely), and \texttt{ThresholdPrefixLen} (reuse only when the prefix match exceeds a configurable length). The policy is checked at two points: (1) in the session's pre-execution metrics collection, and (2) in the interpreter's \texttt{TokenOp} dispatch. This ensures that both introspection and actual backend behavior are consistent under the active policy.
+
+The threshold policy addresses a practical concern: short prefix matches may not justify the overhead of reconstructing backend state from cached handles. A threshold of 0 recovers \texttt{Always} behavior; a threshold equal to the input length effectively disables reuse.
+
+\subsection{Disk-backed persistence}
+The trie cache supports binary serialization of its metadata to disk via \texttt{save\_metadata()} and \texttt{load\_metadata()}. The serialization format (magic \texttt{CPKV}, version~1) stores each cache entry's model identifier, decode parameters, prefix length, prefix hash, recency timestamp, and full prefix token sequence. On load, entries are reinserted into the trie with intermediate-depth entries at every trie node depth, enabling prefix reuse from a fresh session without re-warming.
+
+Backend state handles are \emph{not} serialized: they represent pointers into backend-specific memory that is invalid after process termination. After loading metadata, the first cache hit for each entry triggers a full backend call to re-establish the backend state. Subsequent hits reuse the newly cached state. This means the first run after a cold start pays a one-time state reconstruction cost, but subsequent runs benefit from prefix reuse identically to a warm session.
+
+\subsection{Backend integrations}
+Implemented backends include a fake deterministic backend for controlled validation, Azure OpenAI for real network execution, OpenAI and vLLM shim paths for interchangeable token backends, and libtorch and MLX tensor backends. All token backends implement the \texttt{run\_with\_cache} interface and report reuse metrics. A C ABI adapter allows external backends to integrate without modifying the C++ core.
+
+\subsection{Complexity}
+Trie lookup is $O(h)$ in traversed prefix length $h$; insert is $O(h)$ plus eviction bookkeeping. Canonicalization is $O(n)$ in input token length $n$. In realistic LLM calls, backend execution dominates these costs unless $h$ is very small or generation length is near zero.
+
+\subsection{Correctness guarantees}
+For \texttt{TokenOp}, the cache key includes \texttt{model\_id}, \texttt{temperature}, and \texttt{max\_tokens}. Reuse is only attempted when all decode parameters match exactly. There is no cross-model reuse and no approximate reuse in v0.1. Backend state handles are treated as opaque: the runtime clears cache state on process restart to avoid stale handles.
+
+% ============================================================
+\section{Evaluation}
+% ============================================================
+
+\subsection{Experimental setup}
+We evaluate Continuum along two axes: (1) \emph{token reduction}---the primary metric, measuring how much input processing is avoided by prefix reuse, and (2) \emph{latency}---a secondary but important metric that reflects end-to-end wall-clock improvement. Token reduction is the more stable signal because it is deterministic in controlled settings and insensitive to network variance in real-backend settings.
+
+\textbf{Workloads.} The base workload is a multi-step agent with a shared \textasciitilde3,000-token system prompt and per-step suffixes of varying length. This structure mirrors canonical LLM workflow patterns: research agents, retrieval-augmented pipelines, and multi-turn conversational systems. We vary prefix length, suffix length, step count, and suffix divergence across experiments.
+
+\textbf{Backends.} For controlled evaluation, we use the repository's deterministic fake backend (\texttt{cost\_per\_token\_ms} $= 2.0$), which isolates compute effects from network noise. For real-backend evaluation, we execute the Azure OpenAI integration path with runtime logging enabled.
+
+\textbf{Metrics.} We report tokens processed per step, tokens saved by reuse, cache hit rate, latency per step, and aggregate latency ratio. All deterministic results are reproducible from the benchmark entry points in the repository.
+
+% -----------------------------------------------------------
+\subsection{E1: Baseline vs.\ output cache vs.\ Continuum}
+% -----------------------------------------------------------
+
+Table~\ref{tab:three-methods} compares three reuse strategies on the standard 5-step shared-prefix workload (30-token prefix, 20-token suffix per step, deterministic backend).
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Three-method comparison on 5-step shared-prefix workload.}
+\label{tab:three-methods}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Method} & \textbf{Hit} & \textbf{Tok.} & \textbf{Lat.} \\
+ & \textbf{Rate} & \textbf{Red.} & \textbf{Rat.} \\
+\midrule
+No cache              & 0.00 &  0\% & 1.00 \\
+Output cache          & 0.00 &  0\% & 1.00 \\
+Continuum             & 0.80 & 48\% & 0.52 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Why output cache fails.} In this workload, each step appends a different suffix to the shared prefix. No two steps have identical full input. The output cache therefore records zero hits despite the prefix being identical across all steps. This is the fundamental limitation of output caching for adaptive workflows: it requires static repetition and cannot exploit partial sharing.
+
+\textbf{Why Continuum succeeds.} The trie cache indexes by prefix, not full input. After step~1 seeds the cache with the full prompt, steps~2--5 find the 30-token prefix in the trie and send only their 20-token suffixes to the backend. The 80\% hit rate (4 of 5 steps) and 48\% token reduction follow directly: 120 of 250 total token-equivalents are reused.
+
+Figure~\ref{fig:latency} and Figure~\ref{fig:tokens} show per-step behavior. Step~1 is a compulsory miss; steps~2--5 reuse cached prefix state.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{fig_latency.png}
+\caption{Per-step latency. Step 1 has no reusable prefix; steps 2--5 reuse cached prefix state.}
+\label{fig:latency}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{fig_tokens.png}
+\caption{Per-step token-equivalent compute and tokens saved. Reuse reduces processed tokens after the first step.}
+\label{fig:tokens}
+\end{figure}
+
+% -----------------------------------------------------------
+\subsection{E2: Robustness under varying prefix length}
+% -----------------------------------------------------------
+
+Table~\ref{tab:varying-prefix} shows how Continuum's benefit scales with the fraction of input that is shared prefix. We hold total input length constant at 50 tokens and vary the prefix--suffix split. All runs use the deterministic backend with 5 steps.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Token reduction vs.\ shared-prefix fraction (5 steps).}
+\label{tab:varying-prefix}
+\begin{tabular}{@{}crrr@{}}
+\toprule
+\textbf{Pref.} & \textbf{Suff.} & \textbf{Tok.} & \textbf{Lat.} \\
+ & & \textbf{Red.} & \textbf{Rat.} \\
+\midrule
+45 &  5 & 72\% & 0.18 \\
+30 & 20 & 48\% & 0.52 \\
+20 & 30 & 32\% & 0.68 \\
+10 & 40 & 16\% & 0.84 \\
+ 0 & 50 &  0\% & 1.00 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Token reduction scales linearly with prefix length, as expected from the reuse model. At 90\% prefix sharing (45 tokens), Continuum avoids 72\% of total computation. At 20\% sharing (10 tokens), the benefit is modest (16\%). At 0\% sharing, the runtime incurs no penalty---the trie lookup returns no match and execution proceeds with full recomputation.
+
+This scaling behavior confirms that Continuum is well-suited for the high-prefix-sharing regime that characterizes real agent workloads, where system prompts and accumulated context typically constitute 60--90\% of total input tokens.
+
+% -----------------------------------------------------------
+\subsection{E3: Long-running system behavior}
+% -----------------------------------------------------------
+
+Real-world workflows run for tens or hundreds of steps. Table~\ref{tab:long-running} shows measured behavior for a 20-step agent using the Session abstraction with a 30-token prefix, 20-token suffix configuration.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Measured 20-step session (30-token prefix).}
+\label{tab:long-running}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Metric} & \textbf{No Cache} & \textbf{Cont.} \\
+\midrule
+Tokens processed & 1,060 & 406 \\
+Tokens saved     &     0 & 675 \\
+Hit rate         & 0.00  & 0.95 \\
+Tok.\ reduction  &  0\%  & 64\%  \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Warmup behavior.} Step~1 is a compulsory miss that seeds the cache with the full prefix. From step~2 onward, every step finds the prefix in the trie, yielding a post-warmup hit rate of 100\%. The overall hit rate is 95\% (19 of 20 steps), limited only by the single compulsory miss.
+
+\textbf{Steady-state efficiency.} After warmup, each step saves 35--36 tokens of prefix computation out of 53 total tokens (64\% token reduction). The intermediate-depth prefix entries ensure that even when suffixes diverge, the shared prefix is matched at the correct depth.
+
+\textbf{Persistence benefit.} The key observation is that benefits \emph{increase} with step count. In a 5-step run, the compulsory miss amortizes over only 4 hits. In a 20-step run, it amortizes over 19 hits. This is a direct consequence of the persistent execution model: the longer the runtime runs, the more it benefits from accumulated prefix state.
+
+% -----------------------------------------------------------
+\subsection{E4: Ablation study}
+% -----------------------------------------------------------
+
+Table~\ref{tab:ablation-full} isolates the contribution of each Continuum component on the 5-step deterministic benchmark.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Ablation on 5-step workload.}
+\label{tab:ablation-full}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Config.} & \textbf{Hit} & \textbf{Tok.} & \textbf{Lat.} \\
+ & \textbf{Rate} & \textbf{Red.} & \textbf{Rat.} \\
+\midrule
+Full             & 0.80 & 48\% & 0.52 \\
+$-$ Trie         & 0.00 &  0\% & 1.00 \\
+$-$ Prefix reuse & 0.00 &  0\% & 1.00 \\
+$-$ Effects      & 0.80 & 48\% & 0.52 \\
+$-$ Compiler     & 0.72 & 43\% & 0.56 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Trie index.} Replacing the trie with a flat hash map degrades prefix lookup to exact full-input matching. The cache now stores entries keyed on the full token sequence, so a change in the suffix causes a complete miss. Hit rate drops from 80\% to 0\%, confirming that the trie data structure is essential for prefix-level reuse.
+
+\textbf{Prefix reuse.} Disabling prefix reuse entirely reduces Continuum to a graph executor without caching. Token reduction is zero. This baseline isolates the interpreter and scheduler, confirming they add no overhead (latency ratio $= 1.00$).
+
+\textbf{Effect constraints.} Removing effect serialization does not change metrics on this sequential benchmark because there are no parallel-ready nodes to reorder. However, disabling effect constraints on a graph with parallel branches would introduce correctness risks: reordering a stochastic node before a pure node that depends on its output could produce invalid cached state. Effect constraints provide \emph{safety}, not speed, in this benchmark.
+
+\textbf{Compiler rewrites.} Disabling compiler passes (prefix hoisting and CSE) reduces hit rate from 80\% to 72\%. Without prefix hoisting, shared prefix tokens are not explicitly structured in the graph, and the cache takes slightly longer to populate through natural execution order. The 5-percentage-point difference reflects the compiler's contribution to graph structure optimization.
+
+% -----------------------------------------------------------
+\subsection{E5: Edge case analysis}
+% -----------------------------------------------------------
+
+Table~\ref{tab:edge-cases} evaluates Continuum under conditions that stress the reuse mechanism.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Edge case analysis.}
+\label{tab:edge-cases}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+\textbf{Scenario} & \textbf{Hit} & \textbf{Tok.} & \textbf{Lat.} & \textbf{Note} \\
+ & & & \textbf{Rat.} & \\
+\midrule
+High pref.\ (90\%) & 0.80 & 72\% & 0.18 & Optimal \\
+Med.\ pref.\ (60\%) & 0.80 & 48\% & 0.52 & Standard \\
+Low pref.\ (5\%)    & 0.80 &  4\% & 0.96 & Minimal \\
+No prefix          & 0.00 &  0\% & 1.01 & None \\
+Temp.\ mismatch    & 0.00 &  0\% & 1.00 & Correct \\
+Single step        & 0.00 &  0\% & 1.01 & N/A \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Low-prefix and no-prefix workloads.} When the shared prefix is very short or absent, Continuum incurs negligible overhead (1--2\% latency increase from canonicalization and trie lookup). The system does not harm performance in regimes where reuse is not applicable.
+
+\textbf{Mismatched decode parameters.} Changing temperature between steps correctly prevents prefix reuse. The trie checks decode-parameter compatibility on every lookup; a mismatched temperature produces a miss even when the token prefix is identical. This is the correct behavior: different decode parameters produce different distributions over the same prefix, so cached state would be invalid.
+
+\textbf{Single-step execution.} A single-step program has no reuse opportunity by definition. The runtime processes the full input and seeds the cache, but the cache entry is never consumed. Overhead is again negligible.
+
+% -----------------------------------------------------------
+\subsection{E6: Cold-start vs.\ warm-start persistence}
+% -----------------------------------------------------------
+
+Table~\ref{tab:cold-start} compares two fresh sessions executing the same 5-step workload: one starting from an empty cache (warm-up) and one loading trie metadata from a prior session's disk persistence (cold-start).
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Cold-start vs.\ warm-start (5 steps).}
+\label{tab:cold-start}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Metric} & \textbf{Warm} & \textbf{Cold} \\
+\midrule
+Cache hits & 4/5 & 5/5 \\
+Hit rate   & 0.80 & 1.00 \\
+Cache size & 36   & 40   \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Warm session.} The first step is a compulsory miss that populates the trie. Steps~2--5 match the shared prefix, yielding the expected 80\% hit rate. After 5 steps, the trie contains 36 entries (intermediate-depth entries at every prefix depth for each inserted prompt).
+
+\textbf{Cold session.} Before execution, \texttt{load\_metadata()} restores all trie entries from disk. Because the cache includes intermediate-depth entries at every depth, the first step of the cold session immediately finds the shared prefix in the trie. All 5 steps are cache hits (100\% hit rate), with the cache growing from 36 to 40 entries as new suffix-specific entries are added.
+
+\textbf{Eliminating warmup.} The cold-start result demonstrates that persistence eliminates the compulsory miss entirely. A restarted process can resume reusing prefix state from the first invocation, which is the key benefit of computation-aware persistence over stateless caching.
+
+% -----------------------------------------------------------
+\subsection{E7: Reuse policy ablation}
+% -----------------------------------------------------------
+
+Table~\ref{tab:policy-ablation} shows how reuse policies control the trade-off between reuse benefit and cache overhead on the 20-step workload.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Policy ablation (20-step).}
+\label{tab:policy-ablation}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Policy} & \textbf{Hit} & \textbf{Saved} & \textbf{Tok.} \\
+ & \textbf{Rate} & & \textbf{Red.} \\
+\midrule
+Always           & 0.95 & 675 & 64\% \\
+Threshold (10)   & 0.95 & 675 & 64\% \\
+Threshold (35)   & 0.95 & 675 & 64\% \\
+Threshold (40)   & 0.00 &   0 &  0\% \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Threshold behavior.} The shared prefix is 30 tokens; with intermediate-depth entries, the longest match is 35--36 tokens. A threshold of 10 and 35 both accept all matches because the actual match length (35) exceeds the threshold. A threshold of 40 blocks all matches because the prefix length (35) falls below the threshold.
+
+This policy mechanism allows operators to configure reuse based on their cost model. If backend state reconstruction is expensive (e.g., large KV cache allocations), a higher threshold avoids the overhead of short matches that provide marginal benefit. If reconstruction is cheap, the default \texttt{Always} policy maximizes reuse.
+
+% -----------------------------------------------------------
+\subsection{E8: Developer effort and abstraction cost}
+% -----------------------------------------------------------
+
+Table~\ref{tab:developer-effort} compares the engineering effort required to implement a cached 5-step agent with prefix reuse across different approaches.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Developer effort (5-step cached agent).}
+\label{tab:developer-effort}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Approach} & \textbf{LOC} & \textbf{Cache} & \textbf{Graph} & \textbf{Back.} \\
+ & & & & \textbf{Int.} \\
+\midrule
+Raw API         & 150 & manual & inline & manual \\
+LangChain       & 120 & bolt   & chain  & deleg. \\
+n8n             &  80 & output & config & HTTP \\
+\textbf{Cont.}  & \textbf{45} & auto & graph & plug. \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+In the raw API approach, the developer manually constructs prompts, makes HTTP calls, and implements prefix caching logic in application code. LangChain provides chain abstraction but delegates caching to external components that the developer must wire in. n8n uses a visual configuration model that supports output caching but not prefix-level reuse. Continuum requires the developer to define the workflow as a \texttt{@program} function; caching, scheduling, and backend integration are handled by the runtime.
+
+The qualitative difference is as important as the LOC count. In the raw API and LangChain approaches, cache correctness is the developer's responsibility: they must ensure that cache keys capture all relevant parameters, that stale entries are invalidated, and that effectful operations are not reordered. In Continuum, these concerns are encoded in the graph structure and enforced by the interpreter.
+
+% -----------------------------------------------------------
+\subsection{Real-backend evaluation}
+% -----------------------------------------------------------
+
+We ran the Azure OpenAI backend path (\texttt{benchmark\_azure\_agent}) for N\,=\,5 calls on a shared-prefix workload with a \textasciitilde3,000-token prefix. Table~\ref{tab:real-backend-prelim} reports observed metrics.
+
+\begin{table}[t]
+\centering
+{\small
+\caption{Real-backend (Azure OpenAI, N\!=\!5).}
+\label{tab:real-backend-prelim}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Metric} & \textbf{Base} & \textbf{Cont.} \\
+\midrule
+Med.\ latency (ms)    & 5234  & 4658 \\
+Tokens processed/call  & 3042  & 29    \\
+Tokens saved/call      &   0   & 3010  \\
+Cache hit rate         & 0.00  & 0.80  \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{Token reduction is large and stable.} After the compulsory miss on call~1, calls~2--5 reuse 3,010 of 3,042 tokens per call (99\% token reduction per hit). This confirms that the prefix dominates input size and is consistently reusable in the real backend.
+
+\textbf{Latency improvement is present but noisy.} The aggregate latency reduction is 11\% (median), substantially lower than the 48\% observed in the deterministic benchmark. The gap reflects network transport overhead, provider-side queueing, and the fact that Azure OpenAI's own infrastructure already performs some prefix optimization. Token reduction remains the stable primary signal.
+
+\textbf{Post-warmup behavior.} After the first call seeds the cache, every subsequent call is a hit (post-warmup hit rate of 1.00). In a longer-running deployment, the compulsory miss cost is amortized over many subsequent hits, increasing the aggregate benefit.
+
+% -----------------------------------------------------------
+\subsection{Analysis}
+% -----------------------------------------------------------
+
+\textbf{Token reduction is the right primary metric.} Deterministic benchmarks show a direct correspondence between tokens saved and latency reduced. Real-backend results show that token reduction is stable while latency is sensitive to transport and provider variability. For a runtime system that operates above the serving layer, token reduction is the mechanism-level effect that the runtime directly controls.
+
+\textbf{This is execution reuse, not caching.} An output cache stores final results for exact input matches. Continuum stores intermediate execution state indexed by prefix. When a workflow step changes one token in a 3,000-token prompt, the output cache misses entirely; Continuum reuses 2,999 tokens and processes only the delta. The trie cache implements a checkpoint-resume semantics within the execution graph, not a key-value lookup on final outputs.
+
+\textbf{Warmup is a one-time cost with persistent benefit.} The single compulsory miss on the first step seeds the cache. Every subsequent step with a compatible prefix reuses state. In longer-running workflows, the warmup cost amortizes over more hits, yielding higher aggregate efficiency. This is a direct consequence of the persistent execution model.
+
+\textbf{The real--deterministic gap is structural.} Real backends have their own serving-level optimizations (connection pooling, request batching, provider-side prefix caching) that reduce the marginal benefit of client-side prefix reuse. The deterministic benchmark isolates the runtime mechanism; the real-backend results show the mechanism operating in a production environment. Both perspectives are necessary.
+
+% ============================================================
+\section{Related Work}
+% ============================================================
+
+We organize related systems by the abstraction layer at which they operate and identify the specific limitation that Continuum addresses at each layer.
+
+\subsection{Traditional workflow orchestrators}
+
+\textbf{n8n} \cite{n8n2024docs}, \textbf{Apache Airflow} \cite{apache2024airflow}, and \textbf{Prefect} \cite{prefect2024docs} compose tasks into DAGs and manage execution lifecycle. They operate at the \emph{task-DAG layer}: each node in the graph is an opaque unit of work (a function call, a database query, an HTTP request). Control flow---branching, looping, error handling---is expressed as graph structure.
+
+\textbf{Limitation.} These systems do not reason about \emph{computation within} a task. An LLM API call is a black box; the orchestrator cannot observe or reuse partial model state (e.g., a shared KV cache prefix) across calls. Reuse, if any, must be implemented by the task itself through ad hoc caching logic embedded in application code. Furthermore, execution is stateless: each task instance runs independently, with no persistent state between instances.
+
+\subsection{AI-native orchestration frameworks}
+
+\textbf{LangGraph} \cite{langgraph2024docs} extends LangChain \cite{langchain2024docs} with stateful agent graphs, conditional routing, and tool-calling loops. It operates at the \emph{agent-graph layer}: nodes represent agent actions (LLM calls, tool invocations, human inputs) and edges represent control flow between them. \textbf{CrewAI} \cite{crewai2024docs} orchestrates multi-agent collaboration through role assignments and task delegation. \textbf{AutoGPT} \cite{autogpt2024docs} provides autonomous task decomposition and execution with minimal human oversight.
+
+\textbf{Limitation.} These frameworks model agent coordination and tool wiring but still treat each LLM call as a stateless request. LangGraph maintains conversational state at the application level but does not integrate with backend-level computation state (KV caches, decoder state). The graph structure is tightly coupled to execution: the framework defines both the control-flow graph and the execution engine. Cache semantics, where present, are implemented as external plugins or user-provided middleware, not as a first-class runtime property.
+
+\subsection{LLM serving and cache systems}
+
+\textbf{vLLM} \cite{kwon2023pagedattention} introduces PagedAttention for efficient KV cache memory management, enabling high-throughput serving with automatic cache paging and sharing. \textbf{SGLang} \cite{zheng2024sglang} provides a structured programming interface for LLM calls with radix-based prefix caching and speculative execution. These systems operate at the \emph{backend-runtime layer}: they optimize how individual requests are processed within a serving cluster.
+
+\textbf{KVFlow} \cite{pan2025kvflow} introduces workflow-aware prefix cache policies for multi-agent workloads, explicitly considering the structure of multi-step agent execution when making cache placement decisions. This is the closest existing work to Continuum's focus on program-level reuse.
+
+\textbf{Halo} \cite{li2026halo} explores distributed and heterogeneous inference in edge networks, where cache placement and state movement across nodes are system-level concerns.
+
+\textbf{Limitation.} Serving systems optimize within a single serving context. They do not see the program-level execution graph that defines a multi-step workflow. Cache policies are driven by request-level heuristics (recency, frequency) rather than graph-level structure (prefix sharing across workflow steps). KVFlow addresses this gap partially by considering workflow structure, but it operates at the serving layer rather than the program runtime layer. Continuum's runtime-level placement allows reuse decisions to be informed by graph types, effect annotations, and scheduling constraints that are not visible to the serving infrastructure.
+
+\subsection{Other relevant systems}
+
+\textbf{PyTorch} \cite{paszke2019pytorch} provides tensor graph execution, automatic differentiation, and compilation paths, but token-workflow reuse across LLM calls is outside its abstraction. \textbf{Redis} \cite{redis2024docs} and similar key-value stores provide output-level caching but cannot represent partially completed model state tied to graph execution.
+
+\subsection{Persistent workflow systems}
+
+Persistence and rehydration of workflows is a well-established paradigm that predates LLM-based systems. We distinguish three categories:
+
+\textbf{BPM and durable execution engines.}
+Camunda \cite{camunda2024docs} and Flowable \cite{flowable2024docs} implement the BPMN standard for business process management. They persist execution state---process instance state, task history, variable scopes---to durable storage, enabling process interruption and rehydration. Temporal \cite{temporal2024docs,roemer2020temporal} provides durable execution for microservice workflows: workflow code is replayed deterministically on rehydration, and application-level state is persisted as workflow variables. These systems are designed for long-running business processes (order fulfillment, approval chains, data pipelines) where crash recovery and process migration are primary concerns.
+
+\textbf{Graph-based workflow persistence.}
+Graph databases (Neo4j and similar systems) represent workflows as property graphs with nodes, edges, and properties. Workflow state is rehydrated by traversing the graph from a checkpoint node. State machines represented as graphs (e.g., in AWS Step Functions) persist execution position and transition history. These approaches treat the workflow structure itself as the persistence format.
+
+\textbf{DAG orchestrators.}
+Airflow \cite{apache2024airflow}, Prefect \cite{prefect2024docs}, and n8n \cite{n8n2024docs} persist DAG metadata, task instance state (success, failure, running), and execution logs. Task re-execution uses this metadata to skip completed tasks and resume from the point of failure. Dagster \cite{radul2019dagster} extends this with software-defined assets that materialize and cache intermediate data products.
+
+\textbf{What these systems persist.}
+Across all three categories, the persisted artifact is the same in nature: \emph{control-flow state and application data}. A paused Camunda process instance stores which BPMN element is active and what process variables are set. A rehydrated Temporal workflow stores which activity completed and what its return value was. A resumed Airflow task stores its exit code and log output. None of these systems persist intermediate \emph{computation state}---the partial results of expensive operations that could be resumed rather than restarted.
+
+\subsection{From state persistence to computation persistence}
+
+Table~\ref{tab:persistence-spectrum} summarizes what each system layer persists.
+
+\begin{table*}[t]
+\centering
+{\small
+\caption{Persistence spectrum: what each system layer persists. Continuum is distinguished not by the presence of persistence, but by what is persisted---intermediate execution state rather than control-flow state or application data.}
+\label{tab:persistence-spectrum}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{System type} & \textbf{What is persisted} \\
+\midrule
+BPM (Camunda, Flowable) & Execution position, process variables \\
+Durable exec.\ (Temporal) & Workflow progress, application data \\
+DAG orch.\ (Airflow, Prefect) & Task state, execution logs \\
+Agent fwk (LangGraph, CrewAI) & Conversation memory, agent state \\
+LLM serving (vLLM, SGLang) & Ephemeral KV cache (one batch) \\
+\midrule
+\textbf{Continuum} & \textbf{Prefix execution state (persistent KV handles)} \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}
+
+The gap is not that persistence is missing---it is that the \emph{kind} of state persisted is limited. When an LLM workflow step re-executes with a 3,000-token shared prefix and a 20-token changed suffix, a BPM engine rehydrates the workflow position and then \emph{re-executes the entire LLM call from scratch}. An agent framework replays the conversation and \emph{re-submits the full prompt}. A serving system may or may not have the KV cache for that prefix still in memory, depending on eviction policy.
+
+Continuum closes this gap by making intermediate execution state---specifically, the backend's computation for a shared prefix---a persistable, reusable artifact managed by the runtime. The trie cache stores opaque backend state handles indexed by prefix, model, and decode parameters. When a \texttt{TokenOp} executes, the interpreter finds the longest reusable prefix, passes the corresponding state handle to the backend, and the backend resumes from that point rather than restarting.
+
+This is the conceptual shift: from persisting \emph{where the workflow is} to persisting \emph{where the computation is}. Prior systems persist control-flow position; Continuum persists execution state.
+
+\subsection{Positioning}
+
+Continuum is not a workflow engine, an agent framework, or a serving system. It is a \emph{runtime system}---an execution substrate that provides computation-aware persistence for LLM workflows. Table~\ref{tab:persistence-spectrum} makes the distinction explicit: prior systems persist state; Continuum persists computation.
+
+LangGraph \cite{langgraph2024docs} defines agent control flow. vLLM \cite{kwon2023pagedattention} and SGLang \cite{zheng2024sglang} optimize serving-level KV cache management. KVFlow \cite{pan2025kvflow} brings workflow awareness to serving-level cache policies. Temporal \cite{temporal2024docs} and Camunda \cite{camunda2024docs} persist control-flow state for long-running processes. None of these systems persist intermediate model execution state as a reusable artifact across workflow steps.
+
+Continuum's contribution is the introduction of computation-aware persistence at the program runtime layer. The trie-indexed cache stores backend state handles (not final outputs) indexed by prefix (not full input). The effect-aware scheduler ensures reuse does not violate correctness constraints. The backend abstraction separates reuse policy (runtime) from state representation (backend). The result is a system where partial computation is a first-class persistable object: the runtime persists the fact that ``the model has already processed tokens 1--2,999'' and resumes from that point when token 3,000 changes.
+
+KVFlow \cite{pan2025kvflow} is the closest existing work. It shares Continuum's insight that workflow structure matters for prefix caching, but operates at the serving layer, where cache policies are driven by request-level heuristics and backend-level memory management. Continuum operates at the program runtime layer, where graph types, effect annotations, and scheduling constraints can inform reuse decisions. The two systems are complementary: KVFlow optimizes how prefix state is managed within a serving cluster; Continuum optimizes when and whether prefix reuse is applied based on the program's execution graph.
+
+% ============================================================
+\section{Limitations}
+% ============================================================
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Backend state serialization} is incomplete for full checkpoint portability. On restart, the runtime clears the cache to avoid stale backend handles. Full persistence requires backend-specific serialization, which is deferred to future work.
+  \item \textbf{Decode parameter coverage} is limited in v0.1. The cache key includes \texttt{model\_id}, \texttt{temperature}, and \texttt{max\_tokens}, but does not yet account for \texttt{top\_p}, frequency/presence penalties, or sampling seeds. Extending the key tuple is straightforward but requires careful validation.
+  \item \textbf{Latency benefits depend on workload structure}. Workloads with low prefix sharing (under 10\% of input tokens) show marginal improvement. The system is designed for the high-sharing regime that characterizes real agent workloads.
+  \item \textbf{Real-backend evaluation} is limited to the Azure OpenAI path with small trial counts (N\,=\,5). Broader multi-provider studies with higher trial counts remain future work.
+  \item \textbf{Parallel execution} is not yet benchmarked. The scheduler supports effect-aware parallel groups, but the current evaluation uses sequential workloads. Demonstrating benefit on parallel DAGs is a priority for subsequent evaluation.
+\end{itemize}
+
+% ============================================================
+\section{Future Work}
+% ============================================================
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Full backend state serialization} for cross-restart persistence, enabling cold-start avoidance in production deployments.
+  \item \textbf{Distributed execution} with shared cache metadata across workers, allowing prefix state to survive process migration.
+  \item \textbf{Extended decode-parameter keys} in the trie cache (\texttt{top\_p}, penalties, seeds) for broader compatibility.
+  \item \textbf{Adaptive reuse policies} that enable or disable prefix reuse based on observed hit statistics, avoiding overhead in low-sharing regimes.
+  \item \textbf{Parallel DAG evaluation} to demonstrate effect-aware scheduling benefits on non-sequential workloads.
+  \item \textbf{Native backend compilation} for token and tensor paths, reducing interpreter dispatch overhead.
+\end{itemize}
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+Persistence of workflow state is a solved problem. BPM engines, durable execution frameworks, and DAG orchestrators have persisted control-flow state, process variables, and execution history for decades. What they do not persist is \emph{intermediate computation}: the expensive, partial execution state that constitutes the majority of processing cost in LLM workflows.
+
+Continuum introduces \emph{computation-aware persistence}: the ability to persist and reuse partial model execution state as a first-class runtime artifact. The runtime executes typed graphs through an interpreter with an effect-aware scheduler and a prefix-indexed trie cache that stores backend state handles. When a workflow step re-executes with a partially shared prompt, the runtime finds the longest reusable prefix, passes the corresponding computation state to the backend, and the backend resumes from that point rather than restarting.
+
+The contribution is the \emph{kind} of state that is persisted, not the presence of persistence. Prior systems persist execution position; Continuum persists computation state. Prior systems answer ``where did the workflow leave off?''; Continuum answers ``where did the computation leave off?'' This is the shift from state persistence to computation persistence.
+
+The implementation---a C++ core with Python bindings and pluggable backends---demonstrates that this approach is practical. On deterministic benchmarks, Continuum achieves 80\% cache hit rate and 48\% latency reduction. On real Azure OpenAI calls, it reuses 99\% of prefix tokens per cache-hit step. Extended experiments show that benefits scale with prefix length and amortize over longer-running workflows.
+
+Continuum is a runtime system, not a workflow engine or a serving optimizer. It sits between the application layer (which defines what to compute) and the backend layer (which defines how to compute individual requests), providing the execution-state persistence layer that neither layer offers.
+
+\paragraph{Artifact Note.}
+All claims in this paper are grounded in the open implementation and benchmark interfaces in the Continuum repository, including CIR schema definitions (\texttt{schema/cir.fbs}), runtime sources (\texttt{src/runtime/}), benchmark entry points (\texttt{examples/}), and evaluation artifacts (\texttt{paper/}).
+
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}

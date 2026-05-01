@@ -12,3 +12,4 @@
 #include <continuum/runtime/checkpoint.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/scheduler.hpp>
+#include <continuum/runtime/session.hpp>
