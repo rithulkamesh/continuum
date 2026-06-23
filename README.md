@@ -53,6 +53,13 @@ Try the main example:
 
 - `examples/01_research_agent.py`
 
+See the full reuse stack in one run — trie prefix KV, memo, semantic cache,
+layer KV warm-start, and memory-graph recall, with a live scoreboard:
+
+```bash
+PYTHONPATH=python python examples/05_continuum_reuse_stack.py        # add --trace for per-tier firing
+```
+
 ## Why Continuum
 
 - **One runtime model**: token ops and tensor ops run in one executable graph.

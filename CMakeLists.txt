@@ -61,6 +61,11 @@ add_library(continuum_core
     src/runtime/cache.cpp
     src/runtime/checkpoint.cpp
     src/runtime/session.cpp
+    src/runtime/memo_table.cpp
+    src/runtime/semantic_cache.cpp
+    src/runtime/memory_graph.cpp
+    src/runtime/layer_cache.cpp
+    src/runtime/prefetch.cpp
     src/utils/logging.cpp
     src/compiler/typecheck.cpp
     src/compiler/rewrite.cpp

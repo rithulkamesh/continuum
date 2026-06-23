@@ -1,8 +1,10 @@
 #include <continuum/utils/logging.hpp>
 
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <spdlog/pattern_formatter.h>
@@ -54,7 +56,20 @@ void InitOnce(LogLevel level) {
   }
 }
 
-void EnsureInitialized() { std::call_once(g_init_once, []() { InitOnce(LogLevel::kInfo); }); }
+LogLevel DefaultLevelFromEnv() {
+  const char* raw = std::getenv("CONTINUUM_LOG_LEVEL");
+  if (raw == nullptr) return LogLevel::kInfo;
+  const std::string v(raw);
+  if (v == "off" || v == "OFF" || v == "none") return LogLevel::kOff;
+  if (v == "error" || v == "err") return LogLevel::kError;
+  if (v == "warn" || v == "warning") return LogLevel::kWarn;
+  if (v == "info") return LogLevel::kInfo;
+  if (v == "debug") return LogLevel::kDebug;
+  if (v == "trace") return LogLevel::kTrace;
+  return LogLevel::kInfo;
+}
+
+void EnsureInitialized() { std::call_once(g_init_once, []() { InitOnce(DefaultLevelFromEnv()); }); }
 
 spdlog::logger& Require(const std::shared_ptr<spdlog::logger>& logger, const char* name) {
   if (!logger) {

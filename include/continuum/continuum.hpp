@@ -11,5 +11,10 @@
 #include <continuum/runtime/cache.hpp>
 #include <continuum/runtime/checkpoint.hpp>
 #include <continuum/runtime/interpreter.hpp>
+#include <continuum/runtime/layer_cache.hpp>
+#include <continuum/runtime/memo_table.hpp>
+#include <continuum/runtime/memory_graph.hpp>
+#include <continuum/runtime/prefetch.hpp>
 #include <continuum/runtime/scheduler.hpp>
+#include <continuum/runtime/semantic_cache.hpp>
 #include <continuum/runtime/session.hpp>

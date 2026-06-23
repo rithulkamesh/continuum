@@ -5,14 +5,20 @@
 #include <continuum/runtime/cache.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/scheduler.hpp>
+#include <continuum/runtime/semantic_cache.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace continuum::runtime {
+
+class MemoTable;
+class LayerKVCacheIndex;
+class MemoryGraphStore;
 
 enum class ReusePolicyKind {
   Always,
@@ -43,6 +49,9 @@ struct ReusePolicy {
 struct ReuseStepRecord {
   std::string node_name;
   bool cache_hit = false;
+  bool memo_hit = false;
+  bool semantic_hit = false;
+  float semantic_similarity = 0.0f;
   std::int32_t prefix_hit_len = 0;
   std::int32_t total_tokens = 0;
   std::int32_t tokens_saved = 0;
@@ -88,12 +97,19 @@ class Session {
 
   const ReusePolicy& policy() const { return policy_; }
   void set_policy(const ReusePolicy& policy) { policy_ = policy; }
+  void set_memo_table(MemoTable* memo) { memo_table_ = memo; }
+  void set_semantic_cache(SemanticCacheIndex* sc) { semantic_cache_ = sc; }
+  void set_embedding_provider(EmbeddingProvider* ep) { embedder_ = ep; }
+  void set_layer_cache(LayerKVCacheIndex* lc) { layer_cache_ = lc; }
+  void set_memory_graph(MemoryGraphStore* mg) { memory_graph_ = mg; }
 
   const ReuseMetrics& metrics() const { return metrics_; }
   void reset_metrics() { metrics_.reset(); }
 
   KVCacheIndex& cache() { return cache_; }
   const KVCacheIndex& cache() const { return cache_; }
+  MemoTable* memo_table() const { return memo_table_; }
+  SemanticCacheIndex* semantic_cache() const { return semantic_cache_; }
 
   const std::string& id() const { return session_id_; }
   std::int64_t run_count() const { return metrics_.run_count; }
@@ -109,6 +125,11 @@ class Session {
   KVCacheIndex& cache_;
   ReusePolicy policy_;
   ReuseMetrics metrics_;
+  MemoTable* memo_table_ = nullptr;
+  SemanticCacheIndex* semantic_cache_ = nullptr;
+  EmbeddingProvider* embedder_ = nullptr;
+  LayerKVCacheIndex* layer_cache_ = nullptr;
+  MemoryGraphStore* memory_graph_ = nullptr;
 };
 
 }  // namespace continuum::runtime

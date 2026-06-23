@@ -56,3 +56,6 @@ demo*
 spec.tex
 # Paper artifacts
 paper/
+
+#
+graphify-out

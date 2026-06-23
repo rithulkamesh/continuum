@@ -43,3 +43,17 @@ def test_m2_benchmark_is_reproducible() -> None:
     assert "M2 BENCHMARK VALIDATION" in out
     assert "dataset_size_per_seed: 200" in out
     assert "train_test_split: 80/20" in out
+
+
+def test_reuse_stack_example_shows_all_five_tiers() -> None:
+    out = _run("05_continuum_reuse_stack.py")
+    assert "Continuum - Full Reuse Stack" in out
+    # All five reuse tiers reported in the scoreboard.
+    for tier in ("Tier 1", "Tier 2", "Tier 3", "Tier 4", "Tier 5"):
+        assert tier in out
+    # Trie warm reuse and semantic catch are deterministic on the fake backend.
+    assert "84.9% tokens saved" in out
+    assert "100% hit rate" in out
+    # Layer KV + memory graph wiring exercised end to end.
+    assert "1 checkpoint(s) reused" in out
+    assert "recall fired" in out
