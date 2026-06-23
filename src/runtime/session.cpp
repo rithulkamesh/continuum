@@ -1,4 +1,8 @@
 #include <continuum/runtime/session.hpp>
+#include <continuum/runtime/memo_table.hpp>
+#include <continuum/runtime/semantic_cache.hpp>
+#include <continuum/runtime/layer_cache.hpp>
+#include <continuum/runtime/memory_graph.hpp>
 
 #include <continuum/utils/logging.hpp>
 
@@ -99,37 +103,78 @@ std::vector<continuum::Value> Session::run(
         }
         auto input_tokens = CanonicalizeInputTokens(in_vals);
         DecodeParams dp{payload->op_name, payload->temperature, payload->max_tokens};
-        auto hit = cache_.longest_prefix(payload->model_id, dp, input_tokens);
 
         metrics_.total_lookups++;
         ReuseStepRecord rec;
         rec.node_name = node.debug_name;
         rec.total_tokens = static_cast<std::int32_t>(input_tokens.size());
 
-        if (hit.has_value()) {
-          std::int32_t hit_len = hit->second;
-          if (hit_len > static_cast<std::int32_t>(input_tokens.size())) {
-            hit_len = static_cast<std::int32_t>(input_tokens.size());
-          }
-          if (policy_.should_attempt(input_tokens, hit_len)) {
+        bool memo_hit = false;
+        bool semantic_hit = false;
+
+        if (memo_table_ != nullptr) {
+          auto memo_key = memo_table_->make_key(node, in_vals);
+          auto memo_result = memo_table_->lookup(memo_key);
+          if (memo_result.has_value()) {
+            memo_hit = true;
+            rec.memo_hit = true;
+            rec.tokens_saved = rec.total_tokens;
             metrics_.total_hits++;
-            rec.cache_hit = true;
-            rec.prefix_hit_len = hit_len;
-            rec.tokens_saved = hit_len;
-            metrics_.total_tokens_saved += hit_len;
-            metrics_.total_tokens_processed += static_cast<std::int64_t>(input_tokens.size()) - hit_len;
+            metrics_.total_tokens_saved += rec.total_tokens;
+          }
+        }
+
+        if (!memo_hit && semantic_cache_ != nullptr && embedder_ != nullptr) {
+          std::string prompt_text;
+          for (const auto& v : in_vals) {
+            if (const auto* s = std::get_if<std::string>(&v)) prompt_text += *s;
+          }
+          if (!prompt_text.empty()) {
+            auto embedding = embedder_->embed(prompt_text);
+            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id);
+            if (sem_result.above_threshold) {
+              semantic_hit = true;
+              rec.semantic_hit = true;
+              rec.semantic_similarity = sem_result.similarity;
+              metrics_.total_hits++;
+              metrics_.total_tokens_saved += rec.total_tokens;
+            }
+          }
+        }
+
+        if (!memo_hit && !semantic_hit) {
+          auto hit = cache_.longest_prefix(payload->model_id, dp, input_tokens);
+          if (hit.has_value()) {
+            std::int32_t hit_len = hit->second;
+            if (hit_len > static_cast<std::int32_t>(input_tokens.size())) {
+              hit_len = static_cast<std::int32_t>(input_tokens.size());
+            }
+            if (policy_.should_attempt(input_tokens, hit_len)) {
+              rec.cache_hit = true;
+              rec.prefix_hit_len = hit_len;
+              rec.tokens_saved = hit_len;
+              metrics_.total_hits++;
+              metrics_.total_tokens_saved += hit_len;
+              metrics_.total_tokens_processed += static_cast<std::int64_t>(input_tokens.size()) - hit_len;
+            } else {
+              metrics_.total_tokens_processed += input_tokens.size();
+            }
           } else {
             metrics_.total_tokens_processed += input_tokens.size();
           }
-        } else {
-          metrics_.total_tokens_processed += input_tokens.size();
         }
+
         metrics_.steps.push_back(rec);
       }
     }
   }
 
   Interpreter interp(backends_, cache_, &policy_);
+  interp.set_memo_table(memo_table_);
+  interp.set_semantic_cache(semantic_cache_);
+  interp.set_embedding_provider(embedder_);
+  interp.set_layer_cache(layer_cache_);
+  interp.set_memory_graph(memory_graph_);
   results = interp.run(g, inputs);
   metrics_.run_count++;
 
