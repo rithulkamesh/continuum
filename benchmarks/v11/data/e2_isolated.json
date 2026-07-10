@@ -1,0 +1,133 @@
+{
+  "experiment": "E2: Semantic cache reuse (isolated)",
+  "mechanism": "semantic",
+  "shared_prefix_tokens": 0,
+  "n_trials": 10,
+  "enable_memo": false,
+  "enable_semantic": true,
+  "enable_trie": false,
+  "semantic_threshold": 0.8,
+  "note": "No shared prefix. Memo is disabled. Trie is disabled (fresh KVCacheIndex per trial). Only SemanticCacheIndex is active. BruteForceEmbedding uses character n-gram hashing, so similarity depends on textual overlap, not meaning. Paraphrases share domain terms.",
+  "raw": {
+    "total_backend_calls": 1,
+    "total_memo_hits": 0,
+    "total_semantic_hits": 9,
+    "total_trie_hits": 0,
+    "memo_table_size": 0,
+    "semantic_cache_size": 1,
+    "trie_cache_size": 0,
+    "per_trial": [
+      {
+        "trial": 1,
+        "prompt": "Continuum optimizes KV cache for efficient LLM computation reuse",
+        "latency_ms": 2731.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 75
+      },
+      {
+        "trial": 2,
+        "prompt": "Efficient computation reuse in LLM through Continuum's KV cache optimization",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 87,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 3,
+        "prompt": "KV cache optimization enables efficient LLM computation reuse via Continuum",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 86,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 4,
+        "prompt": "Continuum enables efficient computation reuse through KV cache for LLM inference",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 91,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 5,
+        "prompt": "Efficient LLM computation reuse is achieved via Continuum KV cache optimization",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 90,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 6,
+        "prompt": "Continuum's KV cache design provides efficient computation reuse for LLM workloads",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 93,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 7,
+        "prompt": "Through KV cache optimization, Continuum achieves efficient LLM computation reuse",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 92,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 8,
+        "prompt": "LLM computation reuse is enabled by Continuum's efficient KV cache optimization",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 90,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 9,
+        "prompt": "Continuum optimizes KV cache to enable efficient computation reuse in LLM systems",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 92,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 10,
+        "prompt": "Efficient computation reuse in LLM is achieved through Continuum's KV cache optimization",
+        "latency_ms": 0.0,
+        "memo_hit": false,
+        "semantic_hit": true,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 99,
+        "tokens_processed": 0
+      }
+    ]
+  },
+  "wall_time_s": 2.7323479652404785
+}

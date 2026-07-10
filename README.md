@@ -104,6 +104,12 @@ dominates once 99% of prompt tokens are skipped; token cost is where reuse pays.
 The bundled n-gram embedding provider is a placeholder: semantic-tier results
 require a real embedding model and are excluded from the headline numbers.
 
+<p align="center">
+  <img alt="Continuum v1.1 benchmark dashboard" src="plots/v11/summary_dashboard.png" width="720">
+</p>
+
+Raw data, per-experiment reports, and the scripts that produced every number
+live in [`benchmarks/v11/`](benchmarks/v11/); plots in [`plots/v11/`](plots/v11/).
 Deterministic, CI-checked versions of every mechanism run offline via the
 FakeLLM backend (`examples/05`–`07`, `tests/python/`).
 
