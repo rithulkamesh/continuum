@@ -1,0 +1,386 @@
+{
+  "experiment": "E6: Ablation study (Interpreter path)",
+  "prefix_tokens": 3000,
+  "trials": 11,
+  "question": "Summarize Continuum cache behavior and explain how KV cache reuse works.",
+  "ablation_results": [
+    {
+      "ablation": "A0_full_v11",
+      "description": "Full v1.1 stack (MemoTable + SemanticCache + KVCacheIndex)",
+      "azure": {
+        "n": 10,
+        "first_call_latency_ms": 5164.0,
+        "mean_cached_latency_ms": 0.0,
+        "mean_latency_ms": 0.0,
+        "std_latency_ms": 0.0,
+        "mean_token_reduction_pct": 1.0,
+        "std_token_reduction_pct": 0.0,
+        "total_memo_hits": 10,
+        "total_semantic_hits": 0,
+        "total_trie_hits": 0,
+        "memo_table_size": 1,
+        "semantic_cache_size": 1,
+        "trie_cache_size": 3010,
+        "per_trial": [
+          {
+            "trial": 2,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 3,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 4,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 5,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 6,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 7,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 8,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 9,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 10,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 11,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          }
+        ]
+      }
+    },
+    {
+      "ablation": "A1_repeated_question",
+      "description": "Same question repeated (measures pure memo behavior)",
+      "azure": {
+        "n": 10,
+        "first_call_latency_ms": 5208.0,
+        "mean_cached_latency_ms": 0.0,
+        "mean_latency_ms": 0.0,
+        "std_latency_ms": 0.0,
+        "mean_token_reduction_pct": 1.0,
+        "std_token_reduction_pct": 0.0,
+        "total_memo_hits": 10,
+        "total_semantic_hits": 0,
+        "total_trie_hits": 0,
+        "memo_table_size": 1,
+        "semantic_cache_size": 1,
+        "trie_cache_size": 3010,
+        "per_trial": [
+          {
+            "trial": 2,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 3,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 4,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 5,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 6,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 7,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 8,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 9,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 10,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          },
+          {
+            "trial": 11,
+            "warmup": false,
+            "latency_no_cache_ms": 0.0,
+            "latency_with_cache_ms": 0.0,
+            "latency_speedup": 1.0,
+            "tokens_uncached": 3084,
+            "tokens_sent_cached": 0,
+            "tokens_saved": 3084,
+            "token_reduction_pct": 1.0,
+            "memo_hits": 1,
+            "semantic_hits": 0,
+            "trie_hits": 0
+          }
+        ]
+      }
+    },
+    {
+      "ablation": "A2_component_overhead",
+      "description": "Subsystem construction overhead (no Azure)",
+      "azure": null
+    }
+  ],
+  "note": "All Azure ablations use the same Session configuration with all v1.1 components (MemoTable, SemanticCacheIndex, KVCacheIndex) enabled. The Interpreter path always checks memo -> semantic -> trie -> backend. Component-level ablation requires modifying the C++ Session setup, which is reported as overhead comparison.",
+  "overhead_comparison": [
+    {
+      "subsystem": "SemanticCacheIndex",
+      "avg_construct_ns": 715.174,
+      "p50_construct_ns": 667,
+      "p99_construct_ns": 791,
+      "iterations": 1000
+    },
+    {
+      "subsystem": "MemoTable",
+      "avg_construct_ns": 680.429,
+      "p50_construct_ns": 667,
+      "p99_construct_ns": 792,
+      "iterations": 1000
+    },
+    {
+      "subsystem": "MemoryGraphStore",
+      "avg_construct_ns": 681.307,
+      "p50_construct_ns": 667,
+      "p99_construct_ns": 791,
+      "iterations": 1000
+    },
+    {
+      "subsystem": "LayerKVCacheIndex",
+      "avg_construct_ns": 716.121,
+      "p50_construct_ns": 708,
+      "p99_construct_ns": 833,
+      "iterations": 1000
+    },
+    {
+      "subsystem": "FutureCache",
+      "avg_construct_ns": 646.683,
+      "p50_construct_ns": 625,
+      "p99_construct_ns": 708,
+      "iterations": 1000
+    }
+  ],
+  "summary": {
+    "ablations_with_azure": [
+      "A0_full_v11",
+      "A1_repeated_question"
+    ],
+    "token_reduction_range": [
+      1.0,
+      1.0
+    ],
+    "mean_token_reduction": 1.0,
+    "note": "All Azure ablations use the same v1.1 component configuration. Component-level ablation would require modifying the C++ Session setup. Overhead comparison is measured separately above."
+  },
+  "wall_time_s": 10.38487696647644
+}

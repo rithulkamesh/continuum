@@ -1,0 +1,181 @@
+{
+  "experiment": "E2: Semantic cache reuse (Interpreter path)",
+  "prefix_tokens": 3000,
+  "trials": 2,
+  "semantic_threshold": 0.8,
+  "questions": [
+    "Explain how Continuum reuses LLM computation.",
+    "Describe Continuum's approach to computation reuse in large language models.",
+    "How does Continuum achieve LLM computation reuse?",
+    "What is the role of KV cache in Continuum?",
+    "How does Continuum leverage key-value cache for optimization?",
+    "Explain the KV cache functionality within Continuum."
+  ],
+  "note": "Uses a single Session with MemoTable + SemanticCacheIndex + KVCacheIndex. All questions run through the SAME session in each trial. Question 0 is the base; questions 1-2 are paraphrases of Q0. Questions 3-5 are about KV cache (different topic). Memo fires on exact repeats (trial 2+ with same question). Semantic fires when BruteForceEmbedding cosine similarity >= threshold. BruteForceEmbedding uses character n-grams, so similarity depends on textual overlap.",
+  "azure_api_calls": 1,
+  "v11_subsystems": {
+    "total_memo_hits": 1,
+    "total_semantic_hits": 10,
+    "total_trie_hits": 0,
+    "memo_table_size": 1,
+    "semantic_cache_size": 1,
+    "trie_cache_size": 3010
+  },
+  "per_question": [
+    {
+      "question": "Explain how Continuum reuses LLM computation.",
+      "question_idx": 0,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 5320.0,
+          "memo_hits": 0,
+          "semantic_hits": 0,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 1,
+          "semantic_hits": 0,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 1,
+      "total_semantic_hits": 0,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 2660.0
+    },
+    {
+      "question": "Describe Continuum's approach to computation reuse in large language models.",
+      "question_idx": 1,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 0,
+      "total_semantic_hits": 2,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 0.0
+    },
+    {
+      "question": "How does Continuum achieve LLM computation reuse?",
+      "question_idx": 2,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 0,
+      "total_semantic_hits": 2,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 0.0
+    },
+    {
+      "question": "What is the role of KV cache in Continuum?",
+      "question_idx": 3,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 0,
+      "total_semantic_hits": 2,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 0.0
+    },
+    {
+      "question": "How does Continuum leverage key-value cache for optimization?",
+      "question_idx": 4,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 0,
+      "total_semantic_hits": 2,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 0.0
+    },
+    {
+      "question": "Explain the KV cache functionality within Continuum.",
+      "question_idx": 5,
+      "trials": [
+        {
+          "trial": 1,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        },
+        {
+          "trial": 2,
+          "latency_ms": 0.0,
+          "memo_hits": 0,
+          "semantic_hits": 1,
+          "trie_hits": 0
+        }
+      ],
+      "total_memo_hits": 0,
+      "total_semantic_hits": 2,
+      "total_trie_hits": 0,
+      "mean_latency_ms": 0.0
+    }
+  ],
+  "summary": {
+    "n_questions": 6,
+    "n_trials": 2,
+    "azure_api_calls": 1,
+    "total_memo_hits": 1,
+    "total_semantic_hits": 10,
+    "total_trie_hits": 0,
+    "semantic_hit_rate": 1.0,
+    "memo_hit_rate": 0.08333333333333333
+  },
+  "wall_time_s": 5.322198867797852
+}

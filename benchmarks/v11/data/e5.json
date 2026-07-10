@@ -1,0 +1,153 @@
+{
+  "experiment": "E5: Speculative prefetch (FutureCache get/put)",
+  "workflow_steps": [
+    "user_query",
+    "search_results",
+    "rag_context",
+    "tool_call_1",
+    "tool_result_1",
+    "tool_call_2",
+    "tool_result_2",
+    "synthesis",
+    "final_answer"
+  ],
+  "prediction_rates": {
+    "user_query": 0.0,
+    "search_results": 0.1,
+    "rag_context": 0.2,
+    "tool_call_1": 0.5,
+    "tool_result_1": 0.6,
+    "tool_call_2": 0.7,
+    "tool_result_2": 0.8,
+    "synthesis": 0.9,
+    "final_answer": 0.95
+  },
+  "num_workflows": 100,
+  "cache_configs": [
+    {
+      "max_entries": 64,
+      "ttl_ms": 30000
+    },
+    {
+      "max_entries": 256,
+      "ttl_ms": 30000
+    },
+    {
+      "max_entries": 1024,
+      "ttl_ms": 30000
+    },
+    {
+      "max_entries": 256,
+      "ttl_ms": 5000
+    },
+    {
+      "max_entries": 256,
+      "ttl_ms": 60000
+    }
+  ],
+  "config_results": [
+    {
+      "hits": 394,
+      "misses": 506,
+      "total_lookups": 900,
+      "hit_rate": 0.43777777777777777,
+      "correct_prefetch_puts": 394,
+      "avg_put_ns": 1425.761421319797,
+      "avg_get_ns": 390.54095826893354,
+      "p50_get_ns": 375,
+      "p99_get_ns": 583,
+      "cache_size": 64,
+      "config": {
+        "max_entries": 64,
+        "ttl_ms": 30000
+      },
+      "wall_time_ms": 2.892017364501953
+    },
+    {
+      "hits": 368,
+      "misses": 532,
+      "total_lookups": 900,
+      "hit_rate": 0.4088888888888889,
+      "correct_prefetch_puts": 368,
+      "avg_put_ns": 1644.358695652174,
+      "avg_get_ns": 392.3304416403785,
+      "p50_get_ns": 375,
+      "p99_get_ns": 541,
+      "cache_size": 256,
+      "config": {
+        "max_entries": 256,
+        "ttl_ms": 30000
+      },
+      "wall_time_ms": 2.8390884399414062
+    },
+    {
+      "hits": 370,
+      "misses": 530,
+      "total_lookups": 900,
+      "hit_rate": 0.4111111111111111,
+      "correct_prefetch_puts": 370,
+      "avg_put_ns": 1296.2054054054054,
+      "avg_get_ns": 378.65905511811025,
+      "p50_get_ns": 375,
+      "p99_get_ns": 500,
+      "cache_size": 370,
+      "config": {
+        "max_entries": 1024,
+        "ttl_ms": 30000
+      },
+      "wall_time_ms": 2.6319026947021484
+    },
+    {
+      "hits": 381,
+      "misses": 519,
+      "total_lookups": 900,
+      "hit_rate": 0.42333333333333334,
+      "correct_prefetch_puts": 381,
+      "avg_put_ns": 1567.4803149606298,
+      "avg_get_ns": 395.62685402029666,
+      "p50_get_ns": 375,
+      "p99_get_ns": 541,
+      "cache_size": 256,
+      "config": {
+        "max_entries": 256,
+        "ttl_ms": 5000
+      },
+      "wall_time_ms": 2.7990341186523438
+    },
+    {
+      "hits": 385,
+      "misses": 515,
+      "total_lookups": 900,
+      "hit_rate": 0.42777777777777776,
+      "correct_prefetch_puts": 385,
+      "avg_put_ns": 1567.5454545454545,
+      "avg_get_ns": 377.00155642023344,
+      "p50_get_ns": 375,
+      "p99_get_ns": 500,
+      "cache_size": 256,
+      "config": {
+        "max_entries": 256,
+        "ttl_ms": 60000
+      },
+      "wall_time_ms": 2.7730464935302734
+    }
+  ],
+  "no_prefetch_baseline": {
+    "hits": 800,
+    "total": 900,
+    "hit_rate": 0.8888888888888888,
+    "note": "Baseline: put actual results only after computing them. Next workflow sees them."
+  },
+  "summary": {
+    "best_hit_rate": 0.43777777777777777,
+    "best_config": {
+      "max_entries": 64,
+      "ttl_ms": 30000
+    },
+    "avg_get_latency_ns": 386.83177309359047,
+    "avg_put_latency_ns": 1500.270258376692,
+    "prefetch_benefit_vs_no_prefetch": -0.4511111111111111,
+    "note": "Hit rate depends on prediction accuracy. Higher prediction rates for later steps reflect that workflow patterns become more predictable. TTL and cache size affect hit rate for multi-workload scenarios."
+  },
+  "wall_time_s": 0.01650691032409668
+}

@@ -1,0 +1,133 @@
+{
+  "experiment": "E3: Memo / exact-match reuse (isolated)",
+  "mechanism": "memo",
+  "shared_prefix_tokens": 0,
+  "n_trials": 10,
+  "unique_inputs": 5,
+  "enable_memo": true,
+  "enable_semantic": false,
+  "enable_trie": false,
+  "note": "No shared prefix. Semantic is disabled. Trie is disabled (fresh KVCacheIndex per trial). Only MemoTable is active. First occurrence of each input hits the backend. Second occurrence is an exact match in MemoTable -> backend skipped.",
+  "raw": {
+    "total_backend_calls": 5,
+    "total_memo_hits": 5,
+    "total_semantic_hits": 0,
+    "total_trie_hits": 0,
+    "memo_table_size": 5,
+    "semantic_cache_size": 0,
+    "trie_cache_size": 0,
+    "per_trial": [
+      {
+        "trial": 1,
+        "prompt": "search_database(query='SELECT * FROM users WHERE active=true')",
+        "latency_ms": 2540.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 73
+      },
+      {
+        "trial": 2,
+        "prompt": "lookup_cache(key='session_token_abc123')",
+        "latency_ms": 2380.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 51
+      },
+      {
+        "trial": 3,
+        "prompt": "get_weather(city='San Francisco', units='celsius')",
+        "latency_ms": 5509.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 61
+      },
+      {
+        "trial": 4,
+        "prompt": "calculate_hash(input='continuum_v1.1_release', algorithm='sha256')",
+        "latency_ms": 3222.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 77
+      },
+      {
+        "trial": 5,
+        "prompt": "validate_token(token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')",
+        "latency_ms": 2548.0,
+        "memo_hit": false,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": true,
+        "tokens_saved": 0,
+        "tokens_processed": 71
+      },
+      {
+        "trial": 6,
+        "prompt": "search_database(query='SELECT * FROM users WHERE active=true')",
+        "latency_ms": 0.0,
+        "memo_hit": true,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 73,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 7,
+        "prompt": "lookup_cache(key='session_token_abc123')",
+        "latency_ms": 0.0,
+        "memo_hit": true,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 51,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 8,
+        "prompt": "get_weather(city='San Francisco', units='celsius')",
+        "latency_ms": 0.0,
+        "memo_hit": true,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 61,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 9,
+        "prompt": "calculate_hash(input='continuum_v1.1_release', algorithm='sha256')",
+        "latency_ms": 0.0,
+        "memo_hit": true,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 77,
+        "tokens_processed": 0
+      },
+      {
+        "trial": 10,
+        "prompt": "validate_token(token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')",
+        "latency_ms": 0.0,
+        "memo_hit": true,
+        "semantic_hit": false,
+        "trie_hit": false,
+        "backend_called": false,
+        "tokens_saved": 71,
+        "tokens_processed": 0
+      }
+    ]
+  },
+  "wall_time_s": 16.202493906021118
+}
