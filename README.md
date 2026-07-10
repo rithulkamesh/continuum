@@ -26,55 +26,109 @@
   </a>
 </p>
 
-Continuum is a unified runtime for LLM and ML programs.
-It executes token generation and tensor computation through a shared intermediate representation (IR), so caching, dispatch, and interoperability are handled by one system instead of ad-hoc glue.
+**The AI runtime that never computes the same thing twice — and never loses its place.**
+
+Agent workflows burn money recomputing what they already know: the same system
+prompt tokenized ten thousand times, the same subtask answered again, an
+hour-long run lost to one crash at step 19. Continuum is a C++ execution
+engine that treats LLM calls and tensor ops as operators in one dataflow
+graph — so redundant work is *cached at the runtime level*, and a running
+workflow can be **checkpointed to bytes, resumed in another process, or forked
+from any past step**.
+
+```
+        prompt ──► memo ──► semantic ──► trie prefix KV ──► layer KV ──► backend
+                    │           │              │                │
+                 exact hit   paraphrase    shared prefix    warm decode
+                  (0 ms)      (0 ms)       (~99% fewer      state
+                                            tokens sent)
+```
+
+- **92.5% token reduction** on a mixed 20-step agent workload against live Azure OpenAI
+- **Zero-cost exact repeats** — memoized calls skip the backend entirely
+- **Durable execution** — checkpoint / crash / resume / time-travel fork, deterministic replay
+- **One graph for tokens and tensors** — Azure, OpenAI, Anthropic, vLLM, libtorch, and MLX behind one IR
 
 ## Quick Start
-
-Install:
 
 ```bash
 python -m pip install continuum-ai
 ```
 
-Use:
+Kill an agent mid-run and finish it in a different process:
 
 ```python
-import continuum
+from continuum._native import DurableAgent
+
+agent = DurableAgent()
+agent.begin(["research the topic", "draft the report", "publish it"])
+ckpt = agent.run_until_step(1)        # bytes: graph + every value + KV cache state
+
+# ... process dies here ...
+
+revived = DurableAgent()              # brand-new runtime
+outputs = revived.resume_from(ckpt)   # completes steps 3+ without redoing 1-2
 ```
 
-Run a reproducible benchmark validation:
+Rewind a finished run, edit one step, and replay the alternate timeline —
+completed steps are replayed from the checkpoint, never recomputed:
+
+```python
+forked = DurableAgent.fork(ckpt, node_id, "write a haiku instead")
+alternate = DurableAgent().resume_from(forked)
+```
+
+See every reuse tier fire in one deterministic run:
 
 ```bash
-PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py
+PYTHONPATH=python python examples/05_continuum_reuse_stack.py   # --trace for per-tier firing
+PYTHONPATH=python python examples/06_durable_agent.py           # checkpoint / crash / resume
+PYTHONPATH=python python examples/07_time_travel_fork.py        # rewind, edit, replay
 ```
 
-Try the main example:
+## Measured Results
 
-- `examples/01_research_agent.py`
+Isolated per-tier benchmarks against a live Azure OpenAI backend (gpt-5-mini),
+one reuse mechanism enabled at a time (`benchmarks/v11/`):
 
-See the full reuse stack in one run — trie prefix KV, memo, semantic cache,
-layer KV warm-start, and memory-graph recall, with a live scoreboard:
+| Mechanism | Workload | Result |
+|---|---|---|
+| Trie prefix KV cache | 10 calls, 3,000-char shared prefix | **~99% token reduction** (9/9 hits, ~30 tokens sent per call) |
+| Memo table | 5 exact-repeat tool calls | **5/5 backend calls skipped**, 0 ms |
+| Mixed 20-step agent workflow | prefix + repeats + paraphrases + cold queries | **92.5% token reduction**, 4/20 backend calls eliminated |
+| Cross-session cold start | persist cache metadata, restart, reload | **≥80% hit rate** on first warm run |
+| No-reuse worst case | 4 unrelated queries | ~0.5% overhead-free passthrough, no errors |
 
-```bash
-PYTHONPATH=python python examples/05_continuum_reuse_stack.py        # add --trace for per-tier firing
-```
+Latency on prefix hits drops ~31% (5.4 s → 3.7 s median) — the API round-trip
+dominates once 99% of prompt tokens are skipped; token cost is where reuse pays.
+The bundled n-gram embedding provider is a placeholder: semantic-tier results
+require a real embedding model and are excluded from the headline numbers.
 
-## Why Continuum
+Deterministic, CI-checked versions of every mechanism run offline via the
+FakeLLM backend (`examples/05`–`07`, `tests/python/`).
 
-- **One runtime model**: token ops and tensor ops run in one executable graph.
-- **Backend-agnostic cache reuse**: reusable state handles enable cross-call prefix reuse without backend-specific app code.
-- **Capability-driven dispatch**: backends are selected by declared capabilities (tensor, token, cache).
-- **Explicit tensor interoperability**: cross-backend conversions are explicit and type-tagged.
-- **Native-first core**: C++ engine and ABI-focused design for long-term extensibility.
+## Why a Runtime, Not a Wrapper
+
+Caching bolted onto an SDK can't know what is safe to reuse. Continuum sits
+below the program, where reuse has defined semantics:
+
+- **Correct invalidation** — tool calls are never served from cache
+  (side-effecting), memoized results are version-bumped on resume, and cached
+  KV state is reused only when its tokens are verifiably a prefix of the query.
+- **Policy-gated** — every tier respects a per-session `ReusePolicy`
+  (`always` / `never` / prefix-length threshold): one switch, no stale reads.
+- **Portable state** — backends that can export their state handles carry the
+  KV cache *inside the checkpoint*, so a resumed process starts warm, not cold.
+- **Capability dispatch** — backends declare tensor/token/cache capabilities;
+  the scheduler routes each node, converting tensors across backends explicitly.
 
 ## What Is Implemented
 
-- C++ execution engine with IR interpreter
-- KV cache index with canonical prefix normalization
-- Azure backend for real network execution
-- libtorch backend for tensor/training execution
-- MLX backend for Apple-native tensor paths
+- C++ execution engine with IR interpreter and serializable checkpoints
+- Five-tier reuse stack: trie prefix KV cache, memo table, semantic cache, layer KV warm-start, memory graph recall
+- Durable execution: checkpoint a running workflow to bytes, resume in a fresh process (KV cache included), or fork from a past step with an edited value
+- Session API with per-tier reuse policies and cross-session cache persistence
+- Backends: Azure OpenAI, OpenAI, Anthropic, vLLM shim, libtorch, MLX, deterministic FakeLLM for CI
 
 ## Current Status
 

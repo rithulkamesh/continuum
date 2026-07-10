@@ -111,8 +111,9 @@ std::vector<continuum::Value> Session::run(
 
         bool memo_hit = false;
         bool semantic_hit = false;
+        const bool policy_allows_cache = (policy_.kind != ReusePolicyKind::Never);
 
-        if (memo_table_ != nullptr) {
+        if (policy_allows_cache && memo_table_ != nullptr) {
           auto memo_key = memo_table_->make_key(node, in_vals);
           auto memo_result = memo_table_->lookup(memo_key);
           if (memo_result.has_value()) {
@@ -124,7 +125,7 @@ std::vector<continuum::Value> Session::run(
           }
         }
 
-        if (!memo_hit && semantic_cache_ != nullptr && embedder_ != nullptr) {
+        if (policy_allows_cache && !memo_hit && semantic_cache_ != nullptr && embedder_ != nullptr) {
           std::string prompt_text;
           for (const auto& v : in_vals) {
             if (const auto* s = std::get_if<std::string>(&v)) prompt_text += *s;
@@ -136,6 +137,7 @@ std::vector<continuum::Value> Session::run(
               semantic_hit = true;
               rec.semantic_hit = true;
               rec.semantic_similarity = sem_result.similarity;
+              rec.tokens_saved = rec.total_tokens;
               metrics_.total_hits++;
               metrics_.total_tokens_saved += rec.total_tokens;
             }

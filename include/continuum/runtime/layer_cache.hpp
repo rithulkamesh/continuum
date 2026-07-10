@@ -18,11 +18,12 @@ struct LayerCheckpointKey {
   std::int32_t prefix_len = 0;
   std::int32_t layer_id = 0;
   std::uint64_t arch_version = 0;
+  std::uint64_t token_hash = 0;
 
   bool operator==(const LayerCheckpointKey& o) const {
     return model_id == o.model_id && decode_hash == o.decode_hash &&
            prefix_len == o.prefix_len && layer_id == o.layer_id &&
-           arch_version == o.arch_version;
+           arch_version == o.arch_version && token_hash == o.token_hash;
   }
 };
 
@@ -33,12 +34,16 @@ struct LayerCheckpointKeyHash {
     h ^= std::hash<std::int32_t>{}(k.prefix_len) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     h ^= std::hash<std::int32_t>{}(k.layer_id) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     h ^= std::hash<std::uint64_t>{}(k.arch_version) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    h ^= std::hash<std::uint64_t>{}(k.token_hash) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     return h;
   }
 };
 
 struct LayerCheckpoint {
   backend::BackendState state;
+  // Tokens the cached state was computed over; reuse requires these to be a
+  // prefix of the query tokens, otherwise the state belongs to another prompt.
+  std::vector<std::int32_t> tokens;
   std::string model_id;
   std::string decode_hash;
   std::int32_t layer_id = 0;
@@ -62,7 +67,7 @@ class LayerKVCacheIndex {
 
   LookupResult find_deepest(const std::string& model_id,
                               const std::string& decode_hash,
-                              std::int32_t prefix_len,
+                              const std::vector<std::int32_t>& tokens,
                               std::int32_t total_layers,
                               std::uint64_t arch_version) const;
 
