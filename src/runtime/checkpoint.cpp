@@ -8,7 +8,9 @@ namespace continuum::runtime {
 namespace {
 
 constexpr std::uint32_t kCheckpointMagic = 0x31545043U;  // "CPT1"
-constexpr std::uint16_t kCheckpointVersion = 1;
+constexpr std::uint16_t kCheckpointVersion = 2;
+// v1 checkpoints have no cache snapshot section; still readable.
+constexpr std::uint16_t kCheckpointVersionNoSnapshot = 1;
 constexpr std::uint8_t kValueTagTensor = 0;
 constexpr std::uint8_t kValueTagTokens = 1;
 constexpr std::uint8_t kValueTagSchema = 2;
@@ -33,6 +35,25 @@ T ReadPrimitive(const std::uint8_t*& cur, const std::uint8_t* end) {
   std::memcpy(&out, cur, sizeof(T));
   cur += sizeof(T);
   return out;
+}
+
+void WriteBlob(std::vector<std::uint8_t>& out, const std::uint8_t* data, std::size_t len) {
+  out.insert(out.end(), data, data + len);
+}
+
+void WriteString(std::vector<std::uint8_t>& out, const std::string& s) {
+  WritePrimitive(out, static_cast<std::uint64_t>(s.size()));
+  WriteBlob(out, reinterpret_cast<const std::uint8_t*>(s.data()), s.size());
+}
+
+std::string ReadString(const std::uint8_t*& cur, const std::uint8_t* end) {
+  const auto len = ReadPrimitive<std::uint64_t>(cur, end);
+  if (static_cast<std::size_t>(end - cur) < len) {
+    throw std::runtime_error("checkpoint deserialize: string truncated");
+  }
+  std::string s(reinterpret_cast<const char*>(cur), static_cast<std::size_t>(len));
+  cur += len;
+  return s;
 }
 
 }  // namespace
@@ -238,6 +259,18 @@ std::vector<std::uint8_t> serialize_checkpoint(const Checkpoint& checkpoint) {
     WritePrimitive(out, static_cast<std::uint64_t>(vbytes.size()));
     out.insert(out.end(), vbytes.begin(), vbytes.end());
   }
+  WritePrimitive(out, static_cast<std::uint64_t>(checkpoint.cache_snapshot.size()));
+  for (const auto& e : checkpoint.cache_snapshot) {
+    WriteString(out, e.model_id);
+    WriteString(out, e.decode.op_name);
+    WritePrimitive(out, e.decode.temperature);
+    WritePrimitive(out, e.decode.max_tokens);
+    WritePrimitive(out, e.prefix_len);
+    WritePrimitive(out, static_cast<std::uint64_t>(e.tokens.size()));
+    for (const auto t : e.tokens) WritePrimitive(out, t);
+    WritePrimitive(out, static_cast<std::uint64_t>(e.state_bytes.size()));
+    WriteBlob(out, e.state_bytes.data(), e.state_bytes.size());
+  }
   return out;
 }
 
@@ -249,7 +282,8 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes) {
   const std::uint8_t* end = cur + bytes.size();
   const auto magic = ReadPrimitive<std::uint32_t>(cur, end);
   const auto version = ReadPrimitive<std::uint16_t>(cur, end);
-  if (magic != kCheckpointMagic || version != kCheckpointVersion) {
+  if (magic != kCheckpointMagic ||
+      (version != kCheckpointVersion && version != kCheckpointVersionNoSnapshot)) {
     throw std::runtime_error("checkpoint deserialize: unsupported format");
   }
   Checkpoint out;
@@ -269,6 +303,30 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes) {
     }
     out.value_map[id] = deserialize_value(cur, static_cast<std::size_t>(value_len));
     cur += value_len;
+  }
+  if (version >= kCheckpointVersion) {
+    const auto snap_count = ReadPrimitive<std::uint64_t>(cur, end);
+    out.cache_snapshot.reserve(static_cast<std::size_t>(snap_count));
+    for (std::uint64_t i = 0; i < snap_count; ++i) {
+      CheckpointCacheEntry e;
+      e.model_id = ReadString(cur, end);
+      e.decode.op_name = ReadString(cur, end);
+      e.decode.temperature = ReadPrimitive<float>(cur, end);
+      e.decode.max_tokens = ReadPrimitive<std::int32_t>(cur, end);
+      e.prefix_len = ReadPrimitive<std::int32_t>(cur, end);
+      const auto token_count = ReadPrimitive<std::uint64_t>(cur, end);
+      e.tokens.reserve(static_cast<std::size_t>(token_count));
+      for (std::uint64_t j = 0; j < token_count; ++j) {
+        e.tokens.push_back(ReadPrimitive<std::int32_t>(cur, end));
+      }
+      const auto state_len = ReadPrimitive<std::uint64_t>(cur, end);
+      if (static_cast<std::size_t>(end - cur) < state_len) {
+        throw std::runtime_error("checkpoint deserialize: state payload truncated");
+      }
+      e.state_bytes.insert(e.state_bytes.end(), cur, cur + state_len);
+      cur += state_len;
+      out.cache_snapshot.push_back(std::move(e));
+    }
   }
   return out;
 }

@@ -120,6 +120,17 @@ def test_v11_layer_cache_and_memory_graph_wired():
     assert r["memory_nodes"] == 2
 
 
+def test_layer_cache_content_isolation():
+    """Layer checkpoints are reusable only for prompts they are a token-prefix of."""
+    from continuum._native import run_v11_layer_isolation_check
+
+    r = run_v11_layer_isolation_check()
+    assert r["hit_exact"] is True
+    assert r["hit_extended"] is True
+    assert r["hit_unrelated"] is False
+    assert r["hit_shorter"] is False
+
+
 def test_memo_invalidation_api_wired():
     """invalidate_node / invalidate_version are callable (used on ToolOp / resume)."""
     from continuum._native import MemoTable

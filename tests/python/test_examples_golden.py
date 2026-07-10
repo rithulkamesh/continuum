@@ -45,6 +45,21 @@ def test_m2_benchmark_is_reproducible() -> None:
     assert "train_test_split: 80/20" in out
 
 
+def test_durable_agent_example_resumes_after_crash() -> None:
+    out = _run("06_durable_agent.py")
+    assert "fresh runtime resumed: workflow completed, 10 node outputs" in out
+    assert "KV cache restored across the process boundary:" in out
+    assert "determinism check: two resumes produced identical outputs" in out
+    assert "durable agent: OK" in out
+
+
+def test_time_travel_fork_example_diverges_only_at_edit() -> None:
+    out = _run("07_time_travel_fork.py")
+    assert "divergence: 2/8 node outputs differ" in out
+    assert "replay check: completed steps identical, only the edit diverged" in out
+    assert "time-travel fork: OK" in out
+
+
 def test_reuse_stack_example_shows_all_five_tiers() -> None:
     out = _run("05_continuum_reuse_stack.py")
     assert "Continuum - Full Reuse Stack" in out

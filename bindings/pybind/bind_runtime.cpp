@@ -6,6 +6,7 @@
 #include <continuum/backend/vllm_shim.hpp>
 #include <continuum/ir/graph.hpp>
 #include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/checkpoint.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/layer_cache.hpp>
 #include <continuum/runtime/memo_table.hpp>
@@ -488,6 +489,96 @@ py::object ValueToPy(const continuum::Value& v) {
   if (const auto* i = std::get_if<int64_t>(&v)) return py::int_(*i);
   return py::none();
 }
+// Durable agent runner: a linear multi-step TokenOp workflow whose execution
+// can be checkpointed to bytes mid-run, resumed in a fresh process, or forked
+// by editing a value before resuming (time-travel). Backed by FakeLLM so
+// examples are deterministic and CI-checkable.
+struct PyDurableAgent {
+  continuum::backend::BackendRegistry registry;
+  continuum::runtime::KVCacheIndex cache{4096};
+  continuum::runtime::MemoTable memo{4096, 0};
+  continuum::runtime::Interpreter interp;
+  continuum::ir::Graph graph;
+  std::unordered_map<continuum::ir::NodeId, continuum::Value> inputs;
+  std::vector<continuum::ir::NodeId> prompt_ids;
+  std::vector<continuum::ir::NodeId> step_ids;
+
+  PyDurableAgent() : interp(registry, cache) {
+    registry.register_backend(
+        "default", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+    interp.set_memo_table(&memo);
+  }
+
+  std::size_t begin(const std::vector<std::string>& prompts,
+                    const std::string& model_id, std::int32_t max_tokens) {
+    graph = continuum::ir::Graph{};
+    inputs.clear();
+    prompt_ids.clear();
+    step_ids.clear();
+    for (std::size_t i = 0; i < prompts.size(); ++i) {
+      continuum::ir::Node p;
+      p.kind = continuum::ir::NodeKind::PromptOp;
+      p.debug_name = "step" + std::to_string(i + 1) + "_prompt";
+      const auto pid = graph.add_node(p);
+      prompt_ids.push_back(pid);
+      inputs[pid] = continuum::Value{prompts[i]};
+
+      continuum::ir::Node t;
+      t.kind = continuum::ir::NodeKind::TokenOp;
+      t.payload = continuum::ir::TokenOpPayload{"generate", model_id, 0.0f, max_tokens};
+      t.debug_name = "step" + std::to_string(i + 1) + "_generate";
+      t.inputs.push_back(pid);
+      step_ids.push_back(graph.add_node(t));
+    }
+    interp.begin(graph, inputs);
+    return prompts.size();
+  }
+
+  py::bytes run_until_step(std::size_t step_index) {
+    if (step_index >= step_ids.size()) {
+      throw std::runtime_error("run_until_step: step index out of range");
+    }
+    auto cp = interp.run_until(step_ids[step_index]);
+    auto bytes = continuum::runtime::serialize_checkpoint(cp);
+    return py::bytes(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  }
+
+  py::list resume_from(const py::bytes& blob) {
+    const std::string raw = blob;
+    std::vector<std::uint8_t> bytes(raw.begin(), raw.end());
+    auto cp = continuum::runtime::deserialize_checkpoint(bytes);
+    auto out = interp.resume(cp);
+    py::list result;
+    for (const auto& v : out) result.append(ValueToPy(v));
+    return result;
+  }
+
+  static py::dict inspect(const py::bytes& blob) {
+    const std::string raw = blob;
+    std::vector<std::uint8_t> bytes(raw.begin(), raw.end());
+    auto cp = continuum::runtime::deserialize_checkpoint(bytes);
+    py::dict values;
+    for (const auto& [id, v] : cp.value_map) {
+      values[py::int_(id)] = ValueToPy(v);
+    }
+    py::dict r;
+    r["executed_nodes"] = cp.current_node_index;
+    r["checkpoint_bytes"] = bytes.size();
+    r["values"] = values;
+    return r;
+  }
+
+  static py::bytes fork(const py::bytes& blob, continuum::ir::NodeId node_id,
+                        py::object new_value) {
+    const std::string raw = blob;
+    std::vector<std::uint8_t> bytes(raw.begin(), raw.end());
+    auto cp = continuum::runtime::deserialize_checkpoint(bytes);
+    cp.value_map[node_id] = PyToValue(new_value);
+    auto out = continuum::runtime::serialize_checkpoint(cp);
+    return py::bytes(reinterpret_cast<const char*>(out.data()), out.size());
+  }
+};
+
 }  // namespace
 
 void bind_runtime(py::module_& m) {
@@ -794,6 +885,47 @@ void bind_runtime(py::module_& m) {
     r["layer_cache_size"] = layer_cache.size();
     r["layer_cache_bytes"] = layer_cache.estimated_bytes();
     r["memory_nodes"] = memory.size();
+    return r;
+  });
+
+  py::class_<PyDurableAgent>(m, "DurableAgent")
+      .def(py::init<>())
+      .def("begin", &PyDurableAgent::begin, py::arg("prompts"),
+           py::arg("model_id") = "fake/model", py::arg("max_tokens") = 32)
+      .def("run_until_step", &PyDurableAgent::run_until_step, py::arg("step_index"))
+      .def("resume_from", &PyDurableAgent::resume_from, py::arg("checkpoint"))
+      .def("cache_size", [](const PyDurableAgent& self) { return self.cache.size(); })
+      .def_readonly("prompt_node_ids", &PyDurableAgent::prompt_ids)
+      .def_readonly("step_node_ids", &PyDurableAgent::step_ids)
+      .def_static("inspect", &PyDurableAgent::inspect, py::arg("checkpoint"))
+      .def_static("fork", &PyDurableAgent::fork, py::arg("checkpoint"),
+                  py::arg("node_id"), py::arg("new_value"));
+
+  // Regression check: a layer checkpoint must only be reusable when its tokens
+  // are a prefix of the query tokens — never for an unrelated prompt of
+  // compatible length (that would hand another prompt's backend state to the
+  // backend and corrupt the output).
+  m.def("run_v11_layer_isolation_check", []() -> py::dict {
+    continuum::runtime::LayerKVCacheIndex lc(16, 1024 * 1024);
+
+    continuum::runtime::LayerCheckpoint cp;
+    cp.tokens = {10, 20, 30, 40};
+    cp.model_id = "m";
+    cp.decode_hash = "d";
+    cp.layer_id = 1;
+    cp.prefix_len = 4;
+    cp.estimated_bytes = 64;
+    lc.insert(cp);
+
+    const std::vector<std::int32_t> same{10, 20, 30, 40};
+    const std::vector<std::int32_t> extended{10, 20, 30, 40, 50, 60};
+    const std::vector<std::int32_t> unrelated{99, 98, 97, 96, 95};
+
+    py::dict r;
+    r["hit_exact"] = lc.find_deepest("m", "d", same, 1 << 30, 0).found;
+    r["hit_extended"] = lc.find_deepest("m", "d", extended, 1 << 30, 0).found;
+    r["hit_unrelated"] = lc.find_deepest("m", "d", unrelated, 1 << 30, 0).found;
+    r["hit_shorter"] = lc.find_deepest("m", "d", {10, 20}, 1 << 30, 0).found;
     return r;
   });
 

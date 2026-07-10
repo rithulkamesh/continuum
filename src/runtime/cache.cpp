@@ -360,7 +360,27 @@ void CollectPersistedEntries(const KVCacheIndex::TrieNode& node,
   }
 }
 
+void CollectSnapshot(const KVCacheIndex::TrieNode& node, std::vector<std::int32_t>& path,
+                     std::vector<KVCacheIndex::SnapshotEntry>& out) {
+  for (const auto& entry : node.entries) {
+    out.push_back(KVCacheIndex::SnapshotEntry{entry, path});
+  }
+  for (const auto& child : node.children) {
+    path.push_back(child.token);
+    CollectSnapshot(child, path, out);
+    path.pop_back();
+  }
+}
+
 }  // namespace
+
+std::vector<KVCacheIndex::SnapshotEntry> KVCacheIndex::snapshot() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::vector<SnapshotEntry> out;
+  std::vector<std::int32_t> path;
+  CollectSnapshot(root_, path, out);
+  return out;
+}
 
 bool KVCacheIndex::save_metadata(const std::string& path) const {
   std::lock_guard<std::mutex> lock(mu_);

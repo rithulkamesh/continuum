@@ -215,6 +215,35 @@ Checkpoint Interpreter::run_until(ir::NodeId node_id) {
   cp.serialized_graph = st.graph.serialize();
   cp.current_node_index = static_cast<std::uint64_t>(st.executed_nodes);
   cp.value_map = st.values;
+  // Carry KV cache state across process boundaries when the backend supports
+  // exporting its state handles. Entries that can't be exported are dropped
+  // and resume falls back to a cold cache for them.
+  // ponytail: exports via the primary TokenOp backend; per-entry backend
+  // attribution needed if a session ever mixes token backends.
+  auto token_backend = backends_.get_backend_for(ir::NodeKind::TokenOp);
+  if (token_backend != nullptr) {
+    // The trie stores one partial entry per prefix depth, all sharing one
+    // backend state handle. Export each state once, at its deepest path;
+    // re-inserting on resume recreates the partials.
+    std::unordered_map<void*, KVCacheIndex::SnapshotEntry> deepest;
+    for (auto& snap : cache_.snapshot()) {
+      auto [it, inserted] = deepest.try_emplace(snap.entry.backend_state.handle, snap);
+      if (!inserted && snap.entry.prefix_len > it->second.entry.prefix_len) {
+        it->second = std::move(snap);
+      }
+    }
+    for (const auto& [handle, snap] : deepest) {
+      auto state_bytes = token_backend->export_state(snap.entry.backend_state);
+      if (state_bytes.empty()) continue;
+      CheckpointCacheEntry e;
+      e.model_id = snap.entry.model_id;
+      e.decode = snap.entry.decode;
+      e.prefix_len = snap.entry.prefix_len;
+      e.tokens = snap.tokens;
+      e.state_bytes = std::move(state_bytes);
+      cp.cache_snapshot.push_back(std::move(e));
+    }
+  }
   return cp;
 }
 
@@ -241,8 +270,25 @@ std::vector<continuum::Value> Interpreter::resume(const Checkpoint& checkpoint) 
     ++state.executed_nodes;
     advance_plan_cursor(state);
   }
-  // v0.1 scope: backend state handles are not serialized; invalidate token cache on resume.
+  // Restore KV cache from the checkpoint's exported backend states; anything
+  // the backend can't re-import stays invalidated (cold), never stale.
   cache_.clear();
+  auto token_backend = backends_.get_backend_for(ir::NodeKind::TokenOp);
+  std::size_t restored = 0;
+  if (token_backend != nullptr) {
+    for (const auto& e : checkpoint.cache_snapshot) {
+      auto imported = token_backend->import_state(e.state_bytes);
+      if (!imported.has_value()) continue;
+      cache_.insert(
+          CacheEntry{0, e.model_id, e.decode, e.prefix_len, *imported, 0},
+          e.tokens);
+      ++restored;
+    }
+  }
+  if (!checkpoint.cache_snapshot.empty()) {
+    LOG_INFO(runtime, "resume restored {}/{} kv cache entries",
+             restored, checkpoint.cache_snapshot.size());
+  }
   // v1.1: memo entries reference pre-checkpoint backend state that is now stale.
   // Bump the memo version and drop every entry not at the new version.
   if (memo_table_ != nullptr) {
@@ -329,8 +375,10 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     const auto& key = selected.name;
     const std::string model_id = payload == nullptr ? std::string{} : payload->model_id;
 
+    const bool policy_allows_cache = (policy_ == nullptr || policy_->kind != ReusePolicyKind::Never);
+
     // --- v1.1: MemoTable lookup (deterministic exact match) ---
-    if (memo_table_ != nullptr && payload != nullptr) {
+    if (policy_allows_cache && memo_table_ != nullptr && payload != nullptr) {
       auto memo_key = memo_table_->make_key(n, input_values);
       auto memo_hit = memo_table_->lookup(memo_key);
       if (memo_hit.has_value()) {
@@ -345,7 +393,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     }
 
     // --- v1.1: SemanticCacheIndex lookup (fuzzy embedding match) ---
-    if (semantic_cache_ != nullptr && embedder_ != nullptr && payload != nullptr) {
+    if (policy_allows_cache && semantic_cache_ != nullptr && embedder_ != nullptr && payload != nullptr) {
       std::string prompt_text;
       for (const auto& v : input_values) {
         if (const auto* s = std::get_if<std::string>(&v)) prompt_text += *s;
@@ -368,7 +416,6 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     // --- v0.1: KVCacheIndex trie prefix lookup (unchanged) ---
     std::optional<continuum::runtime::CacheEntry> cache_hit;
     std::int32_t prefix_len = 0;
-    const bool policy_allows_cache = (policy_ == nullptr || policy_->kind != ReusePolicyKind::Never);
     if (policy_allows_cache && payload != nullptr && !input_tokens.empty()) {
       auto hit = cache_.longest_prefix(model_id, decode_params, input_tokens);
       if (hit.has_value()) {
@@ -379,9 +426,26 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
         }
       }
     }
+    // --- v1.1: LayerKVCacheIndex deep warm-start (fallback when trie misses) ---
+    std::optional<backend::BackendState> layer_state;
+    std::string decode_hash;
+    if (layer_cache_ != nullptr && payload != nullptr) {
+      decode_hash = DecodeHash(*payload);
+      if (policy_allows_cache && !cache_hit.has_value()) {
+        auto layer_hit = layer_cache_->find_deepest(
+            model_id, decode_hash, input_tokens,
+            /*total_layers=*/std::numeric_limits<std::int32_t>::max(), /*arch_version=*/0);
+        if (layer_hit.found) {
+          layer_state = layer_hit.state;
+          prefix_len = layer_hit.prefix_len;
+          LOG_INFO(runtime, "layer_hit backend={} model={} layer_id={} prefix_len={}",
+                   key, model_id, layer_hit.layer_id, layer_hit.prefix_len);
+        }
+      }
+    }
+
     const std::int32_t remaining_tokens =
         std::max<std::int32_t>(0, static_cast<std::int32_t>(input_tokens.size()) - prefix_len);
-    const int skipped_tokens = prefix_len;
     if (cache_hit.has_value()) {
       LOG_INFO(
           runtime,
@@ -389,30 +453,15 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
           key,
           model_id,
           prefix_len,
-          skipped_tokens,
+          prefix_len,
           remaining_tokens);
-    } else {
+    } else if (!layer_state.has_value()) {
       LOG_INFO(
           runtime,
           "cache_miss backend={} model={} skipped_tokens=0 remaining_tokens={}",
           key,
           model_id,
           remaining_tokens);
-    }
-
-    // --- v1.1: LayerKVCacheIndex deep warm-start (fallback when trie misses) ---
-    std::optional<backend::BackendState> layer_state;
-    std::string decode_hash;
-    if (layer_cache_ != nullptr && payload != nullptr) {
-      decode_hash = DecodeHash(*payload);
-      auto layer_hit = layer_cache_->find_deepest(
-          model_id, decode_hash, static_cast<std::int32_t>(input_tokens.size()),
-          /*total_layers=*/std::numeric_limits<std::int32_t>::max(), /*arch_version=*/0);
-      if (layer_hit.found && !cache_hit.has_value()) {
-        layer_state = layer_hit.state;
-        LOG_INFO(runtime, "layer_hit backend={} model={} layer_id={} prefix_len={}",
-                 key, model_id, layer_hit.layer_id, layer_hit.prefix_len);
-      }
     }
 
     // --- v1.1: MemoryGraphStore — recall related prior prompts (context) ---
@@ -493,6 +542,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
         if (layer_cache_ != nullptr) {
           LayerCheckpoint cp;
           cp.state = run_result.resulting_state;
+          cp.tokens = input_tokens;
           cp.model_id = model_id;
           cp.decode_hash = decode_hash.empty() ? DecodeHash(*payload) : decode_hash;
           // The backend exposes a single opaque state handle (no per-layer split),

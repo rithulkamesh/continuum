@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
@@ -41,6 +42,25 @@ continuum::TokensValue GenerateOutput(const std::vector<std::int32_t>& prompt_to
 
 BackendCapabilities FakeLLMBackend::capabilities() const {
   return BackendCapabilities{false, true, true};
+}
+
+// FakeLLM state handles are opaque integer ids (see run_with_cache), so
+// portability is a plain integer round-trip. Real backends would serialize
+// their KV tensors or a server-side session token here.
+std::vector<std::uint8_t> FakeLLMBackend::export_state(const BackendState& state) const {
+  const auto id = reinterpret_cast<std::uintptr_t>(state.handle);
+  if (id == 0) return {};
+  std::vector<std::uint8_t> out(sizeof(id));
+  std::memcpy(out.data(), &id, sizeof(id));
+  return out;
+}
+
+std::optional<BackendState> FakeLLMBackend::import_state(const std::vector<std::uint8_t>& bytes) {
+  if (bytes.size() != sizeof(std::uintptr_t)) return std::nullopt;
+  std::uintptr_t id = 0;
+  std::memcpy(&id, bytes.data(), sizeof(id));
+  if (id == 0) return std::nullopt;
+  return BackendState{reinterpret_cast<void*>(id)};
 }
 
 BackendRunResult FakeLLMBackend::run_with_cache(

@@ -38,6 +38,12 @@ class Backend {
   virtual ~Backend() = default;
   virtual BackendCapabilities capabilities() const = 0;
   virtual std::string tensor_backend_type() const { return ""; }
+  // Optional cross-process state portability. Backends that can externalize a
+  // state handle return its bytes from export_state and rebuild a live handle
+  // in import_state. Default: not portable (empty / nullopt); checkpoints then
+  // drop the state and resume falls back to a cold cache.
+  virtual std::vector<std::uint8_t> export_state(const BackendState& /*state*/) const { return {}; }
+  virtual std::optional<BackendState> import_state(const std::vector<std::uint8_t>& /*bytes*/) { return std::nullopt; }
   virtual BackendRunResult run_with_cache(
       const ir::Node& node,
       const std::vector<continuum::Value>& inputs,

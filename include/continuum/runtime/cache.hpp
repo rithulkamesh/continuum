@@ -44,6 +44,14 @@ class KVCacheIndex {
   bool save_metadata(const std::string& path) const;
   bool load_metadata(const std::string& path);
 
+  // Full snapshot of every entry with its token path and live backend state.
+  // Used by checkpointing to carry KV state across process boundaries.
+  struct SnapshotEntry {
+    CacheEntry entry;
+    std::vector<std::int32_t> tokens;
+  };
+  std::vector<SnapshotEntry> snapshot() const;
+
  private:
   mutable std::mutex mu_;
   TrieNode root_;
