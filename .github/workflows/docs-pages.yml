@@ -26,35 +26,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
       - run: python -m pip install --upgrade pip
       - run: pip install sphinx furo breathe
+      - run: git clone --depth 1 --branch v2.3.4 https://github.com/jothepro/doxygen-awesome-css.git docs/doxygen-awesome-css
       - run: PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
       - run: doxygen Doxyfile
       - run: mkdir -p site/python site/cpp
       - run: cp -R docs/api/python/_build/* site/python/
       - run: cp -R docs/api/cpp/html/* site/cpp/
-      - run: |
-          cat > site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title>Continuum Docs</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; line-height: 1.5; padding: 0 1rem; }
-              h1 { margin-bottom: 0.5rem; }
-              p { color: #333; }
-              .card { border: 1px solid #ddd; border-radius: 10px; padding: 1rem; margin-top: 1rem; }
-              a { text-decoration: none; color: #0b57d0; }
-            </style>
-          </head>
-          <body>
-            <h1>Continuum Documentation</h1>
-            <p>Unified runtime docs for token + tensor execution.</p>
-            <div class="card"><strong><a href="./python/">Python API (Sphinx)</a></strong><br/>High-level public API, examples, and integration surface.</div>
-            <div class="card"><strong><a href="./cpp/">C++ API (Doxygen)</a></strong><br/>Core runtime internals, IR/Interpreter/Backend contracts.</div>
-          </body>
-          </html>
-          EOF
+      - run: cp docs/site/index.html site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

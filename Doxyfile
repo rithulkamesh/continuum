@@ -13,3 +13,10 @@ WARN_IF_UNDOCUMENTED   = NO
 FILE_PATTERNS          = *.hpp *.h
 USE_MDFILE_AS_MAINPAGE = README.md
 HAVE_DOT               = NO
+PROJECT_BRIEF          = "Unified runtime for token + tensor execution"
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome-css/doxygen-awesome.css \
+                         docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css
