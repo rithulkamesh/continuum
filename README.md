@@ -32,22 +32,52 @@ Agent workflows burn money recomputing what they already know: the same system
 prompt tokenized ten thousand times, the same subtask answered again, an
 hour-long run lost to one crash at step 19. Continuum is a C++ execution
 engine that treats LLM calls and tensor ops as operators in one dataflow
-graph — so redundant work is *cached at the runtime level*, and a running
+graph — redundant work is cached *at the runtime level*, and a running
 workflow can be **checkpointed to bytes, resumed in another process, or forked
 from any past step**.
 
-```
-        prompt ──► memo ──► semantic ──► trie prefix KV ──► layer KV ──► backend
-                    │           │              │                │
-                 exact hit   paraphrase    shared prefix    warm decode
-                  (0 ms)      (0 ms)       (~99% fewer      state
-                                            tokens sent)
+```mermaid
+flowchart LR
+    P([prompt]) --> M{memo}
+    M -->|exact hit · 0 ms| R([result])
+    M --> S{semantic}
+    S -->|paraphrase hit · 0 ms| R
+    S --> T{trie prefix KV}
+    T -->|"shared prefix · ~99% fewer tokens sent"| B
+    T --> L{layer KV}
+    L -->|warm decode state| B[backend call]
+    B --> R
 ```
 
 - **92.5% token reduction** on a mixed 20-step agent workload against live Azure OpenAI
 - **Zero-cost exact repeats** — memoized calls skip the backend entirely
 - **Durable execution** — checkpoint / crash / resume / time-travel fork, deterministic replay
 - **One graph for tokens and tensors** — Azure, OpenAI, Anthropic, vLLM, libtorch, and MLX behind one IR
+
+## What You Can Build With It
+
+- **Agents that survive anything** — deploys, crashes, spot-instance eviction:
+  checkpoint mid-run, resume on another machine with the KV cache still warm.
+- **Cheaper agent fleets** — hundreds of sessions sharing one system prompt
+  send it once; the trie prefix cache serves the rest.
+- **Eval and CI loops** — re-running near-identical prompt suites hits the
+  memo and prefix tiers instead of your API budget.
+- **Time-travel debugging** — rewind a finished run, edit step 7, replay the
+  alternate timeline; completed steps come from the checkpoint, never recomputed.
+- **Hybrid pipelines** — hosted LLM calls and local tensor ops (libtorch, MLX)
+  as operators in the same scheduled graph.
+
+## How It Fits With What You Already Use
+
+Continuum sits *below* your framework, not beside it — LangChain/LangGraph
+code, raw SDK calls, or plain Python all route through the same runtime.
+
+| You may already use | What it gives you | What Continuum adds |
+|---|---|---|
+| Provider prompt caching (OpenAI / Anthropic) | Prefix discounts inside one provider, TTL-bound | Provider-agnostic reuse, plus memo/semantic tiers and cache state you own |
+| GPTCache / LangChain cache | App-layer response cache | Runtime-level reuse with defined invalidation semantics — tool calls never served stale |
+| LangGraph checkpointing / Temporal | Workflow state persistence and retries | Checkpoints that carry the *KV cache* too — resume warm, deterministic replay, fork any past step |
+| vLLM prefix caching | KV reuse on GPUs you operate | The same idea extended across hosted APIs, portable inside checkpoints |
 
 ## Quick Start
 
@@ -70,8 +100,7 @@ revived = DurableAgent()              # brand-new runtime
 outputs = revived.resume_from(ckpt)   # completes steps 3+ without redoing 1-2
 ```
 
-Rewind a finished run, edit one step, and replay the alternate timeline —
-completed steps are replayed from the checkpoint, never recomputed:
+Rewind a finished run, edit one step, and replay the alternate timeline:
 
 ```python
 forked = DurableAgent.fork(ckpt, node_id, "write a haiku instead")
@@ -89,7 +118,7 @@ PYTHONPATH=python python examples/07_time_travel_fork.py        # rewind, edit, 
 ## Measured Results
 
 Isolated per-tier benchmarks against a live Azure OpenAI backend (gpt-5-mini),
-one reuse mechanism enabled at a time (`benchmarks/v11/`):
+one reuse mechanism enabled at a time ([`benchmarks/v11/`](benchmarks/v11/)):
 
 | Mechanism | Workload | Result |
 |---|---|---|
@@ -128,6 +157,25 @@ below the program, where reuse has defined semantics:
 - **Capability dispatch** — backends declare tensor/token/cache capabilities;
   the scheduler routes each node, converting tensors across backends explicitly.
 
+```mermaid
+flowchart TB
+    subgraph app["your code"]
+        A[LangChain / SDK calls / plain Python]
+    end
+    subgraph rt["Continuum runtime (C++)"]
+        IR[dataflow IR] --> SCHED[capability-aware scheduler]
+        SCHED --> REUSE[five-tier reuse stack]
+        SCHED --> CKPT[(checkpoints<br/>graph + values + KV state)]
+    end
+    subgraph backends["backends"]
+        B1[Azure / OpenAI / Anthropic]
+        B2[vLLM]
+        B3[libtorch / MLX]
+    end
+    A --> IR
+    REUSE --> B1 & B2 & B3
+```
+
 ## What Is Implemented
 
 - C++ execution engine with IR interpreter and serializable checkpoints
@@ -145,8 +193,8 @@ below the program, where reuse has defined semantics:
 
 ## Documentation
 
-- Python API docs: `https://ct.rithul.dev/python/`
-- C++ API docs: `https://ct.rithul.dev/cpp/`
+- Python API docs: <https://ct.rithul.dev/python/>
+- C++ API docs: <https://ct.rithul.dev/cpp/>
 
 Build docs locally:
 
@@ -168,11 +216,11 @@ Local outputs:
 
 ## Community
 
-- Contributing guide: `CONTRIBUTING.md`
-- Code of Conduct: `CODE_OF_CONDUCT.md`
-- Security policy: `SECURITY.md`
-- Support guide: `SUPPORT.md`
-- Governance: `GOVERNANCE.md`
+- Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Code of Conduct: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- Security policy: [`SECURITY.md`](SECURITY.md)
+- Support guide: [`SUPPORT.md`](SUPPORT.md)
+- Governance: [`GOVERNANCE.md`](GOVERNANCE.md)
 
 Quick contributor setup:
 
