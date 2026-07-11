@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Continuum — Docs</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #12151d;
+      --panel-hover: #171b26;
+      --border: #232838;
+      --text: #e7eaf2;
+      --muted: #9aa3b5;
+      --accent: #7c6cff;
+      --accent2: #4ecdc4;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    :root { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    body {
+      font-family: var(--mono);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.6;
+    }
+    main { max-width: 880px; width: 100%; padding: 0 1.5rem 4rem; }
+    .hero { padding: 4rem 0 3rem; text-align: center; }
+    .hero h1 {
+      position: absolute;
+      width: 1px; height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    #ascii {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: calc(min(100vw - 3rem, 820px) / 120);
+      line-height: 1.05;
+      white-space: pre;
+      text-align: left;
+      user-select: none;
+      background: linear-gradient(120deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p.tag {
+      margin-top: 1.2rem;
+      font-size: 0.95rem;
+      color: var(--muted);
+      max-width: 40rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .hero p.tag::before { content: "// "; opacity: 0.6; }
+    .badges { margin-top: 1.5rem; display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+    .badge {
+      font-size: 0.78rem;
+      color: var(--muted);
+      padding: 0.15rem 0.2rem;
+      background: transparent;
+      border: none;
+    }
+    .badge::before { content: "["; color: var(--accent); }
+    .badge::after { content: "]"; color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 2.5rem; }
+    .card {
+      display: block;
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.4rem 1.5rem;
+      text-decoration: none;
+      color: var(--text);
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+    .card:hover { transform: translateY(-3px); border-color: var(--accent); background: var(--panel-hover); }
+    .card .icon {
+      font-size: 0.95rem;
+      color: var(--accent2);
+      background: linear-gradient(120deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 700;
+    }
+    .card h2 { font-size: 1.02rem; margin: 0.7rem 0 0.3rem; font-weight: 700; letter-spacing: -0.01em; }
+    .card h2::before { content: "❯ "; color: var(--accent); }
+    .card p { color: var(--muted); font-size: 0.85rem; }
+    .card .go { display: inline-block; margin-top: 0.9rem; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
+    .card:hover .go::after { content: "_"; animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    footer { padding: 2rem; color: var(--muted); font-size: 0.8rem; }
+    footer::before { content: "// "; opacity: 0.6; }
+    footer a { color: var(--muted); }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f7f8fb; --panel: #ffffff; --panel-hover: #f2f3f9;
+        --border: #e3e6ef; --text: #1a1d27; --muted: #5b6376;
+        --accent: #5b4bdb; --accent2: #0f9b8e;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <h1>Continuum</h1>
+      <pre id="ascii" aria-hidden="true"></pre>
+      <p class="tag">A unified runtime for token + tensor execution — one IR, cache-aware scheduling, multi-tier reuse.</p>
+      <div class="badges">
+        <span class="badge">C++ core</span>
+        <span class="badge">Python bindings</span>
+        <span class="badge">Durable checkpoints</span>
+        <span class="badge">Semantic reuse</span>
+      </div>
+    </div>
+    <div class="grid">
+      <a class="card" href="./python/">
+        <div class="icon">&gt;&gt;&gt;</div>
+        <h2>python_api</h2>
+        <p>High-level public API, sessions, reuse policies, examples, and integration surface.</p>
+        <span class="go">read the sphinx docs →</span>
+      </a>
+      <a class="card" href="./cpp/">
+        <div class="icon">{ }</div>
+        <h2>cpp_api</h2>
+        <p>Core runtime internals — IR, interpreter, backend contracts, and the ABI surface.</p>
+        <span class="go">read the doxygen docs →</span>
+      </a>
+      <a class="card" href="https://github.com/rithulkamesh/continuum">
+        <div class="icon">$ git</div>
+        <h2>source</h2>
+        <p>Repository, benchmarks, examples, and the research paper behind the runtime.</p>
+        <span class="go">view on github →</span>
+      </a>
+    </div>
+  </main>
+  <footer>Continuum · MIT licensed</footer>
+  <script>
+    (() => {
+      const el = document.getElementById("ascii");
+      const W = 200, H = 17;
+      const RAMP = " .·:;+=xX#@";
+
+      // 8-row pixel font for the letters of CONTINUUM; nearest-neighbor
+      // sampled onto the grid, so edges stay crisp at any size.
+      const GLYPHS = {
+        C: ["  #####", " ###   ", "##     ", "##     ", "##     ", "##     ", " ###   ", "  #####"],
+        O: ["  ####  ", " ###### ", "###  ###", "##    ##", "##    ##", "###  ###", " ###### ", "  ####  "],
+        N: ["##    ##", "###   ##", "####  ##", "## ## ##", "##  ####", "##   ###", "##    ##", "##    ##"],
+        T: ["########", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   "],
+        I: ["####", " ## ", " ## ", " ## ", " ## ", " ## ", " ## ", "####"],
+        U: ["##    ##", "##    ##", "##    ##", "##    ##", "##    ##", "##    ##", " ##  ## ", "  ####  "],
+        M: ["##    ##", "###  ###", "########", "## ## ##", "##    ##", "##    ##", "##    ##", "##    ##"],
+      };
+      // stitch the word into one bitmap with 1-col gaps, remembering which
+      // letter owns each bitmap column so letters can get their own effects
+      const WORD = "CONTINUUM";
+      const rows = Array.from({ length: 8 }, () => "");
+      const colOwner = [], starts = [];
+      for (let i = 0; i < WORD.length; i++) {
+        const g = GLYPHS[WORD[i]];
+        starts.push(rows[0].length);
+        for (let r = 0; r < 8; r++) rows[r] += g[r] + " ";
+        for (let c = 0; c < g[0].length; c++) colOwner.push(i);
+        colOwner.push(-1);
+      }
+      const BW = rows[0].length, BH = 8;
+      // letter box inside the grid, sized so pixels render square-ish
+      const TW = W - 10;
+      const TH = Math.round(TW * 0.6 / 1.05 / (BW / BH));
+      const X0 = (W - TW) >> 1, Y0 = (H - TH) >> 1;
+      // cell: 0 background, 1 glyph pixel, 2 cavity inside a U (holds liquid)
+      const cell = new Uint8Array(W * H);
+      const owner = new Int8Array(W * H).fill(-1);
+      for (let y = 0; y < TH; y++)
+        for (let x = 0; x < TW; x++) {
+          const bx = (x / TW * BW) | 0, by = (y / TH * BH) | 0;
+          const o = colOwner[bx], gi = (Y0 + y) * W + X0 + x;
+          owner[gi] = o;
+          if (rows[by][bx] === "#") cell[gi] = 1;
+          else if (o >= 0 && WORD[o] === "U") {
+            const bl = bx - starts[o];
+            if (bl >= 2 && bl <= 5 && by < 6) cell[gi] = 2;
+          }
+        }
+      // the O's box in grid coordinates — the donut spins in here
+      const oIdx = 1;
+      const OX = X0 + Math.round(starts[oIdx] * TW / BW);
+      const OW = Math.round(8 * TW / BW), OH = TH, OY = Y0;
+
+      const hash = (x, y) => {
+        const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        return s - Math.floor(s);
+      };
+
+      // the classic spinning torus, z-buffered into a small char box
+      const dbuf = new Int8Array(OW * OH), dz = new Float32Array(OW * OH);
+      function donut(t) {
+        dbuf.fill(-1); dz.fill(0);
+        const A = t * 1.1, B = t * 0.55;
+        const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
+        const R1 = 1, R2 = 2, K2 = 5, K1 = OW * K2 * 3 / (8 * (R1 + R2));
+        for (let th = 0; th < 6.28; th += 0.25) {
+          const ct = Math.cos(th), st = Math.sin(th);
+          for (let ph = 0; ph < 6.28; ph += 0.07) {
+            const cp = Math.cos(ph), sp = Math.sin(ph);
+            const ox = R2 + R1 * ct, oy = R1 * st;
+            const x = ox * (cB * cp + sA * sB * sp) - oy * cA * sB;
+            const y = ox * (sB * cp - sA * cB * sp) + oy * cA * cB;
+            const ooz = 1 / (K2 + cA * ox * sp + oy * sA);
+            const xp = (OW / 2 + K1 * ooz * x) | 0;
+            const yp = (OH / 2 - K1 * ooz * y * 0.55) | 0;
+            if (xp < 0 || xp >= OW || yp < 0 || yp >= OH || ooz <= dz[yp * OW + xp]) continue;
+            const L = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
+            dz[yp * OW + xp] = ooz;
+            dbuf[yp * OW + xp] = Math.max(1, Math.min(10, 2 + L * 6 | 0));
+          }
+        }
+      }
+
+      function frame(t) {
+        donut(t);
+        let out = "";
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const gi = y * W + x;
+            const o = owner[gi], c = cell[gi];
+            const L = o >= 0 ? WORD[o] : "";
+            let idx = 0;
+            if (L === "O" && x >= OX && x < OX + OW && y >= OY && y < OY + OH) {
+              const d = dbuf[(y - OY) * OW + (x - OX)];
+              if (d >= 0) idx = d;
+            } else if (c === 1 && L === "T") {
+              // digital rain streaming down the T
+              const f = (y * 0.13 - t * 1.6 + hash(x, 7) * 3) % 1;
+              idx = 4 + ((1 - (f < 0 ? f + 1 : f)) * 6 | 0);
+            } else if (L === "U" && c) {
+              const phase = o === 6 ? 0 : Math.PI; // the two Us slosh in antiphase
+              const bottom = Y0 + TH * 0.72;
+              const fill = (0.5 + 0.45 * Math.sin(t * 1.4 + phase)) * (bottom - Y0 - 1);
+              const surf = bottom - fill + 0.9 * Math.sin(x * 0.7 + t * 3.2 + phase);
+              if (c === 1) idx = 8; // the cup itself
+              else if (y > surf) idx = y - surf < 1.2 ? 5 : 7; // liquid, lighter at the surface
+            } else if (c === 1) {
+              // plasma shimmer for the remaining letters
+              const w = 0.5 + 0.35 * Math.sin(x * 0.22 - t * 2.2 + Math.sin(y * 0.6 + t * 1.3) * 1.6)
+                            + 0.15 * Math.sin((x + y) * 0.35 + t * 3.1);
+              idx = 5 + Math.max(0, Math.min(4, (w * 5) | 0));
+            } else {
+              // sparse drifting starfield around the letters
+              const n = hash(x, y + ((t * 1.5) | 0));
+              if (n > 0.985) idx = 1 + (hash(y, x) * 2) | 0;
+            }
+            idx = Math.max(0, Math.min(10, idx));
+            out += RAMP[idx];
+          }
+          out += "\n";
+        }
+        el.textContent = out;
+      }
+
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        frame(0);
+        return;
+      }
+      let start;
+      (function loop(ts) {
+        start ??= ts;
+        frame((ts - start) / 1000);
+        requestAnimationFrame(loop);
+      })(performance.now());
+    })();
+  </script>
+</body>
+</html>
