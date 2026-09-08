@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Raised `CMAKE_CXX_STANDARD` to 20; current libtorch headers require a C++20
+  compiler (CI had been failing to build since a torch upgrade).
+- Restructured the repo: `docs/design/`, `benchmarks/{scripts,data,plots,reports}/`,
+  `examples/` + `examples/milestones/`, community files under `.github/`,
+  landing page under `web/`. Paper split to a separate private repo.
+- Removed dead Python scaffolding (`backends/` package, fake DSL helpers);
+  `continuum._native` now binds the extension directly.
+- Renamed `src/runtime/cache.*` to `kv_prefix_cache.*`.
+- Added `.clang-format`, `.clang-tidy`, `.editorconfig`, and a C++ standards
+  skill. See `docs/design/code-standards-audit.md`.
+
 ## 1.0.0 - 2026-04-26
 
 - Locked canonical CIR schema in `schema/cir.fbs` and added schema-layout validation tests.

@@ -13,7 +13,7 @@
 
 ## Coding standards
 
-- C++: modern C++17. Follow `.clang-format` and `.clang-tidy`, and the
+- C++: modern C++20 (raised from 17 for libtorch header compatibility). Follow `.clang-format` and `.clang-tidy`, and the
   checklist in `.claude/skills/cpp-standards/SKILL.md` (RAII, no raw
   `new`/`delete`, `const` by default, smart pointers for ownership, raw
   pointers only for non-owning observation, `enum class` over raw ints,

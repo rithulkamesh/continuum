@@ -19,8 +19,9 @@ config, **open** needs a follow-up change.
 | C5 | **`reinterpret_cast<void*>` round-trips for state handles.** Inherent to the C ABI seam, but should be isolated to one adapter file with a documented contract rather than repeated per backend. | medium | open |
 | C6 | **No `const` on locals that never change** in several runtime hot paths. `misc-const-correctness` in the new `.clang-tidy` will surface the list. | low | config |
 | C7 | **Missing special-member declarations.** Classes that own resources (`KVCacheIndex`, `LayerKVCacheIndex`, `Session`) should state the rule of five explicitly or `= default` / `= delete`. `cppcoreguidelines-special-member-functions` covers it. | medium | config |
-| C8 | **`std::memcpy` for type punning** in `ir/graph.cpp`, `runtime/checkpoint.cpp`, `runtime/kv_prefix_cache.cpp`. This is acceptable for serialization and is the portable idiom pre-C++20 `bit_cast`; left as is, noted for a future `std::bit_cast` migration when the standard moves up. | info | open |
+| C8 | **`std::memcpy` for type punning** in `ir/graph.cpp`, `runtime/checkpoint.cpp`, `runtime/kv_prefix_cache.cpp`. This is acceptable for serialization and is the portable idiom pre-C++20 `bit_cast`; left as is; `std::bit_cast` is now available (C++20) and is the preferred follow-up. | info | open |
 | C9 | **`.clang-format` / `.clang-tidy` were absent.** The tree is already close to Google style with 2-space indent and 100-column lines; the new `.clang-format` encodes exactly that so it is close to a no-op on existing files. | medium | fixed |
+| C10 | **CI was red on `master` since 2026-07-11**, unrelated to any repo change: a newer libtorch release requires a C++20 compiler while `CMakeLists.txt` pinned `CMAKE_CXX_STANDARD 17` (`#error C++20 or later compatible compiler is required to use PyTorch`). Bumped to C++20. | high | fixed |
 
 ### C++ naming
 

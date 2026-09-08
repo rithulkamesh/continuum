@@ -37,7 +37,7 @@ Follow these strict guidelines when writing, refactoring, or reviewing code.
 
 ## Project specifics
 
-- Standard is C++17 (`CMAKE_CXX_STANDARD 17`). Do not use later-standard
+- Standard is C++20 (`CMAKE_CXX_STANDARD 20`; raised from 17 because current libtorch headers require it). Do not use later-standard
   features without raising the standard in `CMakeLists.txt` first.
 - Warnings are errors-adjacent: `-Wall -Wextra -Wpedantic` are on. Keep new
   code warning-clean.
