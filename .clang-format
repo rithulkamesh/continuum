@@ -1,6 +1,6 @@
-# Continuum C++ formatting. Matches the existing tree: Google base,
-# 2-space indent, 100-column lines.
 ---
+# Continuum C++ formatting: Google base, 2-space indent, 100-column lines.
+# Chosen to match the existing tree, so a first run is close to a no-op.
 Language: Cpp
 BasedOnStyle: Google
 Standard: c++17
