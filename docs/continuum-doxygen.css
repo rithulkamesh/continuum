@@ -1,9 +1,12 @@
 /* Continuum C++ docs theme: match the landing page.
    Loaded after doxygen-awesome-css, so these win. Dark ground,
    Newsreader / Hanken Grotesk / IBM Plex Mono, one rust accent.
-   The webfonts are pulled in by docs/doxygen-header.html.
-   docs/doxygen-header.html also sets <html class="dark-mode">, which
-   is what makes doxygen-awesome's dark palette engage. */
+
+   HTML_COLORSTYLE = DARK makes Doxygen emit a dark base and, on Doxygen
+   1.9.5+, add class="dark-mode" to <html>. The selector list below covers
+   both cases (class present or not) so the palette is forced regardless. */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 html,
 html:not(.light-mode),

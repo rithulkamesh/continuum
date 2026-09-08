@@ -47,7 +47,6 @@ Both output directories are generated and git-ignored.
 | `docs/api/python/conf.py` | Sphinx config: theme, dark palette, logo, autodoc mocks. |
 | `docs/api/python/_static/continuum.css` | Dark brand theme layered on Furo. |
 | `docs/api/cpp-overview.md` | Doxygen main page. |
-| `docs/Doxyfile` | Doxygen config. Pulls in `docs/design/*.md` as pages. |
-| `docs/doxygen-header.html` | Custom header: forces dark mode, loads webfonts. |
-| `docs/continuum-doxygen.css` | Dark brand theme layered on doxygen-awesome-css. |
+| `docs/Doxyfile` | Doxygen config. `HTML_COLORSTYLE = DARK`; pulls in `docs/design/*.md` as pages. |
+| `docs/continuum-doxygen.css` | Dark brand theme + webfonts, layered on doxygen-awesome-css. |
 | `web/logo.svg` | Brand mark, copied into both doc builds. |
