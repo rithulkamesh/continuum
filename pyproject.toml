@@ -1,5 +1,9 @@
 [build-system]
-requires = ["scikit-build-core>=0.9", "pybind11>=2.11"]
+# torch is a compile-time dependency, not just a runtime one: core headers
+# (include/continuum/ir/value.hpp and others) include <torch/...>, and
+# CMakeLists.txt runs `import torch` to locate libtorch's CMake package.
+# It must therefore be present in the build environment.
+requires = ["scikit-build-core>=0.9", "pybind11>=2.11", "torch>=2.2"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -38,6 +42,15 @@ build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/continuum"]
 cmake.define.CONTINUUM_BUILD_PYTHON = "ON"
 cmake.define.CONTINUUM_BUILD_TESTS = "OFF"
+
+[[tool.uv.index]]
+# CPU-only torch wheels: a few hundred MB instead of the multi-GB CUDA build.
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
