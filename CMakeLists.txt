@@ -40,7 +40,9 @@ if(CONTINUUM_USE_SPDLOG)
         FetchContent_Declare(
             spdlog
             GIT_REPOSITORY https://github.com/gabime/spdlog.git
-            GIT_TAG v1.14.1
+            # 1.15.x bundles fmt 11, which compiles cleanly under C++20.
+            # 1.14.1's bundled fmt trips "consteval ... not a constant expression".
+            GIT_TAG v1.15.3
         )
         FetchContent_MakeAvailable(spdlog)
     endif()
