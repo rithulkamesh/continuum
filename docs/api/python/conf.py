@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "python"))
 
 project = "Continuum"
-author = "Continuum Authors"
+author = "Rithul Kamesh"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
