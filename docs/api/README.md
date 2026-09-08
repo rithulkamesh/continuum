@@ -3,7 +3,7 @@
 Continuum ships dual API docs:
 
 - Python API docs via Sphinx (`docs/api/python`)
-- C++ API docs via Doxygen (`Doxyfile`)
+- C++ API docs via Doxygen (`docs/Doxyfile`)
 
 ## Build Python docs
 
@@ -15,5 +15,5 @@ sphinx-build -b html docs/api/python docs/api/python/_build
 ## Build C++ docs
 
 ```bash
-doxygen Doxyfile
+doxygen docs/Doxyfile
 ```

@@ -40,8 +40,6 @@ bench-results/
 # Logs and temp
 *.log
 tmp/
-demo.mp4
-demo_logs_*.txt
 *.cast
 *.rec
 *.mp4
@@ -52,11 +50,11 @@ demo*
 .env.*
 !.env.example
 
-# tex
-spec.tex
-# Paper artifacts
-paper/
-
-#
-graphify-out
+# Generated docs
+docs/api/python/_build/
+docs/api/cpp/
 docs/doxygen-awesome-css/
+
+# Misc build scratch
+spec.tex
+graphify-out

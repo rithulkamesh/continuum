@@ -15,7 +15,7 @@
 ## API Documentation
 
 - Sphinx Python docs scaffold: `docs/api/python/`.
-- Doxygen config: `Doxyfile`.
+- Doxygen config: `docs/Doxyfile`.
 - CI docs job builds Sphinx and Doxygen artifacts.
 
 ## Backend ABI Preparation
@@ -40,7 +40,7 @@
 ## Release Artifacts
 
 - Package version set to `1.0.0` in `pyproject.toml`.
-- Changelog added: `CHANGELOG.md`.
+- Changelog added: `docs/CHANGELOG.md`.
 - Release workflow added: `.github/workflows/release.yml`.
 
 ## Issue Risk Summary

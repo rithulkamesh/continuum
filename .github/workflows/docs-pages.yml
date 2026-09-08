@@ -28,7 +28,7 @@ jobs:
       - run: pip install sphinx furo breathe
       - run: git clone --depth 1 --branch v2.3.4 https://github.com/jothepro/doxygen-awesome-css.git docs/doxygen-awesome-css
       - run: PYTHONPATH=python sphinx-build -b html docs/api/python docs/api/python/_build
-      - run: doxygen Doxyfile
+      - run: doxygen docs/Doxyfile
       - run: mkdir -p site/python site/cpp
       - run: cp -R docs/api/python/_build/* site/python/
       - run: cp -R docs/api/cpp/html/* site/cpp/
