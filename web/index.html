@@ -3,279 +3,1089 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Continuum — Docs</title>
+  <title>Continuum, a C++ runtime that reuses its work</title>
+  <meta name="description" content="Continuum runs LLM calls and tensor ops as one dataflow graph. It reuses work it has already done, and it can save a running job to bytes and finish it in another process." />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#100f0d" />
+  <meta property="og:title" content="Continuum" />
+  <meta property="og:description" content="A C++ runtime for LLM and tensor workloads. Reuses repeated work; checkpoints a running job to bytes." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%20fill=%22none%22%3E%3Cpath%20d=%22M21.8%2022.8A9%209%200%201%201%2021.8%209.2%22%20stroke=%22%23e8623c%22%20stroke-width=%224.6%22%20stroke-linecap=%22round%22/%3E%3Ccircle%20cx=%2223%22%20cy=%2216%22%20r=%222.5%22%20fill=%22%23e8623c%22/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
   <style>
+    /* =========================================================
+       Continuum landing page
+       Dark engineering instrument: warm near-black ground,
+       one rust accent, a visible 12-column grid, serif
+       statements, mono for data, one slow breathing glow.
+       ========================================================= */
     :root {
-      --bg: #0b0d12;
-      --panel: #12151d;
-      --panel-hover: #171b26;
-      --border: #232838;
-      --text: #e7eaf2;
-      --muted: #9aa3b5;
-      --accent: #7c6cff;
-      --accent2: #4ecdc4;
+      --bg:         #100f0d;
+      --bg-2:       #17150f;
+      --surface:    #1b1a16;
+      --ink:        #ece9e0;
+      --ink-2:      #b6b2a6;
+      --ink-3:      #8a8579;
+      --rule:       #2a2823;
+      --rule-2:     #3b382f;
+      --accent:     #e8623c;
+      --accent-dim: #c14a2a;
+      --focus:      #6f9bff;
+
+      --serif: "Newsreader", Georgia, "Times New Roman", serif;
+      --sans:  "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+      --mono:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+      --maxw: 1180px;
+      --gutter: clamp(1.25rem, 4vw, 3rem);
+      --colgap: 1.5rem;
+      --nav-h: 60px;
+
+      /* code token colours */
+      --c-cm: #8a8579;
+      --c-st: #9bbb7a;
+      --c-kw: #7ea2dd;
     }
-    * { box-sizing: border-box; margin: 0; }
-    :root { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    * { margin: 0; }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+      scroll-behavior: smooth;
+      scroll-padding-top: calc(var(--nav-h) + 28px);
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
     body {
+      font-family: var(--sans);
+      font-size: 1rem;
+      line-height: 1.62;
+      color: var(--ink-2);
+      background-color: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+
+    /* a slow, low-contrast glow so the page reads as alive, not static */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(90% 55% at 50% -8%, rgba(232, 98, 60, 0.10), transparent 62%),
+        radial-gradient(70% 45% at 88% 12%, rgba(111, 155, 255, 0.05), transparent 60%);
+      opacity: 0.75;
+    }
+
+    /* the visible 12-column grid, drawn once, fixed */
+    .grid-rules {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      margin-inline: auto;
+      width: min(var(--maxw), calc(100% - (2 * var(--gutter))));
+      pointer-events: none;
+      background-image: repeating-linear-gradient(
+        90deg, var(--rule) 0 1px, transparent 1px calc(100% / 12)
+      );
+      opacity: 0.5;
+      -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 160px, #000 calc(100% - 220px), transparent 100%);
+      mask-image: linear-gradient(180deg, transparent 0, #000 160px, #000 calc(100% - 220px), transparent 100%);
+    }
+    @media (max-width: 1023px) { .grid-rules { display: none; } }
+
+    a { color: inherit; text-decoration: none; }
+    a, button { -webkit-tap-highlight-color: transparent; }
+    button { touch-action: manipulation; font: inherit; color: inherit; }
+    svg { display: block; }
+    ::selection { background: rgba(232, 98, 60, 0.24); }
+
+    :focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 3px;
+      border-radius: 2px;
+    }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+    .skip {
+      position: fixed; top: 10px; left: 10px; z-index: 200;
+      transform: translateY(-160%);
+      background: var(--ink); color: var(--bg);
+      padding: 10px 14px; font-family: var(--mono); font-size: 0.8rem;
+      transition: transform 0.18s ease;
+    }
+    .skip:focus { transform: none; }
+
+    /* --- layout primitives --- */
+    .shell {
+      width: min(var(--maxw), calc(100% - (2 * var(--gutter))));
+      margin-inline: auto;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      column-gap: var(--colgap);
+    }
+    .band {
+      position: relative;
+      z-index: 1;
+      padding-block: clamp(4.5rem, 10vw, 8rem);
+      border-top: 1px solid var(--rule-2);
+    }
+    .band.alt { background: var(--bg-2); }
+
+    .kicker {
+      grid-column: 1 / -1;
       font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1.4rem;
+    }
+    .statement {
+      grid-column: 1 / 9;
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: clamp(1.8rem, 1.3rem + 2vw, 2.9rem);
+      line-height: 1.1;
+      letter-spacing: -0.015em;
+      color: var(--ink);
+      text-wrap: balance;
+    }
+    .lede {
+      grid-column: 1 / 8;
+      margin-top: 1.5rem;
+      font-size: clamp(1.05rem, 1rem + 0.4vw, 1.2rem);
+      line-height: 1.55;
+      color: var(--ink-2);
+      text-wrap: pretty;
+    }
+    @media (max-width: 767px) {
+      .statement, .lede { grid-column: 1 / -1; }
+    }
+
+    /* --- reveal on scroll (opacity + transform only) --- */
+    .reveal { opacity: 0; transform: translateY(14px); }
+    .reveal.in {
+      opacity: 1; transform: none;
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+    }
+
+    /* ============ header ============ */
+    .nav {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 100;
+      height: var(--nav-h);
+      display: flex;
+      align-items: center;
+      transition: background-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .nav[data-scrolled="true"] {
+      background: rgba(16, 15, 13, 0.82);
+      box-shadow: 0 1px 0 var(--rule-2);
+      -webkit-backdrop-filter: saturate(1.3) blur(8px);
+      backdrop-filter: saturate(1.3) blur(8px);
+    }
+    .nav-inner {
+      width: min(var(--maxw), calc(100% - (2 * var(--gutter))));
+      margin-inline: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .wordmark {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-family: var(--serif);
+      font-size: 1.22rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    .wordmark svg { width: 24px; height: 24px; color: var(--ink); }
+    .nav-links { display: flex; align-items: center; gap: 1.6rem; }
+    .nav-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      font-size: 0.9rem;
+      color: var(--ink-2);
+      transition: color 0.16s ease;
+    }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-right { display: flex; align-items: center; gap: 0.9rem; }
+    .nav-docs {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-size: 0.9rem;
+      color: var(--ink-3);
+    }
+    .nav-docs a {
+      display: inline-flex; align-items: center; min-height: 44px;
+      color: var(--ink-2); transition: color 0.16s ease;
+    }
+    .nav-docs a:hover { color: var(--ink); }
+    .nav-docs .sep { width: 1px; height: 12px; background: var(--rule-2); }
+    .nav-right .gh {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 44px; height: 44px; color: var(--ink-2);
+      transition: color 0.16s ease;
+    }
+    .nav-right .gh:hover { color: var(--ink); }
+    @media (max-width: 767px) {
+      .nav-links { display: none; }
+      .nav-docs .label { display: none; }
+    }
+
+    /* ============ hero ============ */
+    .hero {
+      position: relative;
+      z-index: 1;
+      padding-top: calc(var(--nav-h) + clamp(3rem, 12vh, 7rem));
+      padding-bottom: clamp(3.5rem, 9vw, 6.5rem);
+    }
+    .hero-aura {
+      position: absolute;
+      left: 50%;
+      top: -6%;
+      width: min(920px, 92vw);
+      aspect-ratio: 1 / 0.58;
+      transform: translateX(-50%);
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(48% 50% at 32% 42%, rgba(232, 98, 60, 0.22), transparent 70%),
+        radial-gradient(42% 46% at 74% 56%, rgba(111, 155, 255, 0.12), transparent 72%);
+      filter: blur(34px);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .hero-aura   { animation: breathe 11s ease-in-out infinite; }
+      .hero-aura.b { animation: breathe 17s ease-in-out -5s infinite; opacity: 0.8; }
+      body::after  { animation: glow 16s ease-in-out infinite; }
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: 0.72; transform: translateX(-50%) scale(1); }
+      50%      { opacity: 1;    transform: translateX(-50%) scale(1.06); }
+    }
+    @keyframes glow {
+      0%, 100% { opacity: 0.6; }
+      50%      { opacity: 0.95; }
+    }
+    .hero h1 {
+      grid-column: 1 / 10;
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: clamp(2.4rem, 1.6rem + 3.6vw, 4.2rem);
+      line-height: 1.06;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      text-wrap: balance;
+    }
+    .hero h1 .mark { color: var(--accent); font-style: italic; }
+    .hero p.sub {
+      grid-column: 1 / 8;
+      margin-top: 1.6rem;
+      font-size: clamp(1.05rem, 1rem + 0.45vw, 1.25rem);
+      line-height: 1.55;
+      color: var(--ink-2);
+      text-wrap: pretty;
+    }
+    .hero .actions {
+      grid-column: 1 / -1;
+      margin-top: 2.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem 1.75rem;
+    }
+    @media (max-width: 767px) {
+      .hero h1, .hero p.sub { grid-column: 1 / -1; }
+    }
+
+    .command {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.6rem 0.75rem;
+      max-width: 100%;
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--rule-2);
+      border-radius: 4px;
+      padding: 0.5rem 0.6rem 0.5rem 0.85rem;
+    }
+    .command .sigil { color: var(--accent); user-select: none; }
+    .command button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 0.85rem;
+      font-family: var(--sans);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--ink-2);
       background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
+      border: 1px solid var(--rule-2);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: color 0.16s ease, border-color 0.16s ease;
+    }
+    .command button:hover { color: var(--ink); border-color: var(--ink-3); }
+    .command button[data-done="true"] { color: var(--accent); border-color: var(--accent); }
+
+    .docnav { display: inline-flex; align-items: center; gap: 0.5rem 0.9rem; flex-wrap: wrap; }
+    .docnav .lbl { font-family: var(--mono); font-size: 0.76rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+    .textlink {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 44px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .textlink .arrow { color: var(--accent); transition: transform 0.16s ease; }
+    .textlink:hover { color: var(--accent); }
+    .textlink:hover .arrow { transform: translate(2px, -2px); }
+    @media (prefers-reduced-motion: reduce) { .textlink:hover .arrow { transform: none; } }
+
+    /* proof strip */
+    .proof {
+      grid-column: 1 / -1;
+      margin-top: clamp(3rem, 7vw, 5rem);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--rule-2);
+      border-bottom: 1px solid var(--rule-2);
+    }
+    .proof div { padding: 1.4rem 1.5rem 1.4rem 0; border-left: 1px solid var(--rule); }
+    .proof div:first-child { border-left: 0; }
+    .proof dt {
+      font-family: var(--mono);
+      font-size: clamp(1.15rem, 0.9rem + 1vw, 1.6rem);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+    .proof dd { margin-top: 0.35rem; font-size: 0.9rem; color: var(--ink-3); }
+    @media (max-width: 620px) {
+      .proof { grid-template-columns: 1fr; }
+      .proof div { border-left: 0; border-top: 1px solid var(--rule); padding-right: 1.5rem; }
+      .proof div:first-child { border-top: 0; }
+    }
+
+    /* ============ numbered problem list ============ */
+    .points { grid-column: 1 / -1; margin-top: clamp(2.5rem, 5vw, 4rem); }
+    .points li {
+      list-style: none;
+      display: grid;
+      grid-template-columns: 3rem 1fr;
+      gap: 1rem;
+      padding: 1.5rem 0;
+      border-top: 1px solid var(--rule);
+      font-size: 1.05rem;
+      color: var(--ink-2);
+    }
+    .points li:last-child { border-bottom: 1px solid var(--rule); }
+    .points .num {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--accent);
+      padding-top: 0.2rem;
+    }
+
+    /* ============ reuse tiers ============ */
+    .tiers {
+      grid-column: 1 / -1;
+      margin-top: clamp(2.5rem, 5vw, 4rem);
+      border-left: 2px solid var(--accent);
+    }
+    .tier {
+      list-style: none;
+      display: grid;
+      grid-template-columns: 8rem 1fr auto;
+      align-items: baseline;
+      gap: 0.5rem 1.5rem;
+      padding: 1.15rem 1.25rem;
+      border-top: 1px solid var(--rule);
+      transition: background-color 0.16s ease;
+    }
+    .tier:last-child { border-bottom: 1px solid var(--rule); }
+    .tier:hover { background: var(--bg-2); }
+    .tier .t-name { font-weight: 600; color: var(--ink); }
+    .tier .t-desc { color: var(--ink-2); }
+    .tier .t-cost {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-3);
+      white-space: nowrap;
+    }
+    .tier.cold { background: rgba(232, 98, 60, 0.07); }
+    .tier.cold .t-cost { color: var(--accent); }
+    @media (max-width: 719px) {
+      .tier { grid-template-columns: 1fr; gap: 0.3rem; }
+      .tier .t-cost { justify-self: start; }
+    }
+    .tiers-note {
+      grid-column: 1 / -1;
+      margin-top: 1.1rem;
+      font-size: 0.9rem;
+      color: var(--ink-3);
+    }
+
+    /* ============ measured ============ */
+    .bigstat { grid-column: 1 / 6; margin-top: clamp(2rem, 4vw, 3rem); }
+    .bigstat .n {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: clamp(3rem, 1.5rem + 7vw, 6rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    .bigstat .c { margin-top: 1rem; font-size: 0.95rem; color: var(--ink-2); text-wrap: pretty; }
+    .bars { grid-column: 7 / -1; margin-top: clamp(2rem, 4vw, 3rem); align-self: end; }
+    .bar-row { margin-bottom: 1.1rem; }
+    .bar-row .lbl {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.78rem;
+      font-variant-numeric: tabular-nums; color: var(--ink-3);
+      margin-bottom: 0.4rem;
+    }
+    .bar-track { height: 8px; background: var(--bg-2); border: 1px solid var(--rule); }
+    .bar-fill { height: 100%; transform: scaleX(0); transform-origin: left; transition: transform 1s ease; }
+    .bar-fill.base { background: var(--rule-2); }
+    .bar-fill.cont { background: var(--accent); }
+    @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+    @media (max-width: 767px) { .bigstat, .bars { grid-column: 1 / -1; } }
+
+    .results { grid-column: 1 / -1; margin-top: clamp(2.5rem, 5vw, 3.5rem); }
+    .results div {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 1rem 1.5rem;
+      padding: 1.15rem 0;
+      border-top: 1px solid var(--rule);
+    }
+    .results div:last-child { border-bottom: 1px solid var(--rule); }
+    .results dt {
+      font-family: var(--mono);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+    .results dd { color: var(--ink-2); font-size: 0.98rem; text-wrap: pretty; }
+    @media (max-width: 559px) { .results div { grid-template-columns: 1fr; gap: 0.3rem; } }
+
+    /* ============ code + tabs ============ */
+    .tabs { grid-column: 1 / -1; margin-top: clamp(2rem, 4vw, 3rem); }
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      border-bottom: 1px solid var(--rule-2);
+      margin-bottom: -1px;
+    }
+    .pills button {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      padding: 0.7rem 0.95rem;
+      min-height: 44px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--ink-3);
+      cursor: pointer;
+      transition: color 0.16s ease, border-color 0.16s ease;
+    }
+    .pills button:hover { color: var(--ink-2); }
+    .pills button[aria-selected="true"] {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    .code {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border: 1px solid var(--rule-2);
+      border-radius: 0 4px 4px 4px;
+      overflow: hidden;
+    }
+    .code figcaption {
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      letter-spacing: 0.06em;
+      color: var(--ink-3);
+      padding: 0.65rem 1.1rem;
+      border-bottom: 1px solid var(--rule);
+      background: var(--bg-2);
+    }
+    .code pre {
+      margin: 0;
+      padding: 1.25rem 1.1rem;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 0.83rem;
+      line-height: 1.75;
+      color: var(--ink);
+      -webkit-overflow-scrolling: touch;
+    }
+    .code .cm { color: var(--c-cm); }
+    .code .st { color: var(--c-st); }
+    .code .kw { color: var(--c-kw); }
+    .code + .code { margin-top: 1rem; }
+    .panel-note {
+      margin-top: 0.9rem;
+      font-size: 0.9rem;
+      color: var(--ink-3);
+      max-width: 62ch;
+      text-wrap: pretty;
+    }
+
+    .tags { grid-column: 1 / -1; margin-top: 1.6rem; display: flex; flex-wrap: wrap; gap: 0.6rem; }
+    .tag {
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      color: var(--ink-2);
+      border: 1px solid var(--rule-2);
+      border-radius: 4px;
+      padding: 0.4rem 0.7rem;
+    }
+
+    /* ============ backends ============ */
+    .backends {
+      grid-column: 1 / -1;
+      margin-top: clamp(2.5rem, 5vw, 3.5rem);
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+      border-left: 1px solid var(--rule);
+      border-top: 1px solid var(--rule);
+    }
+    .backends span {
+      padding: 1rem 1.1rem;
+      font-size: 0.95rem;
+      color: var(--ink);
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+    .backends span small {
+      display: block;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--ink-3);
+      margin-top: 0.15rem;
+    }
+
+    /* ============ start ============ */
+    .doclinks {
+      grid-column: 1 / -1;
+      margin-top: clamp(2rem, 4vw, 3rem);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+      gap: 1px;
+      background: var(--rule-2);
+      border: 1px solid var(--rule-2);
+    }
+    .doclinks a {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      line-height: 1.6;
+      gap: 0.4rem;
+      padding: 1.4rem 1.4rem 1.5rem;
+      background: var(--bg);
+      transition: background-color 0.16s ease;
     }
-    main { max-width: 880px; width: 100%; padding: 0 1.5rem 4rem; }
-    .hero { padding: 4rem 0 3rem; text-align: center; }
-    .hero h1 {
-      position: absolute;
-      width: 1px; height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-    }
-    #ascii {
-      display: inline-block;
-      font-family: var(--mono);
-      font-size: calc(min(100vw - 3rem, 820px) / 120);
-      line-height: 1.05;
-      white-space: pre;
-      text-align: left;
-      user-select: none;
-      background: linear-gradient(120deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-    .hero p.tag {
-      margin-top: 1.2rem;
-      font-size: 0.95rem;
-      color: var(--muted);
-      max-width: 40rem;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    .hero p.tag::before { content: "// "; opacity: 0.6; }
-    .badges { margin-top: 1.5rem; display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
-    .badge {
-      font-size: 0.78rem;
-      color: var(--muted);
-      padding: 0.15rem 0.2rem;
-      background: transparent;
-      border: none;
-    }
-    .badge::before { content: "["; color: var(--accent); }
-    .badge::after { content: "]"; color: var(--accent); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 2.5rem; }
-    .card {
-      display: block;
+    .doclinks a:hover { background: var(--bg-2); }
+    .doclinks .h { font-family: var(--serif); font-size: 1.15rem; font-weight: 500; color: var(--ink); }
+    .doclinks .d { font-size: 0.9rem; color: var(--ink-3); }
+    .doclinks .go { font-family: var(--mono); font-size: 0.76rem; color: var(--accent); margin-top: 0.3rem; }
+
+    /* ============ footer ============ */
+    footer {
       position: relative;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 1.4rem 1.5rem;
-      text-decoration: none;
-      color: var(--text);
-      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      z-index: 1;
+      border-top: 1px solid var(--rule-2);
+      padding-block: clamp(3rem, 6vw, 4.5rem);
     }
-    .card:hover { transform: translateY(-3px); border-color: var(--accent); background: var(--panel-hover); }
-    .card .icon {
-      font-size: 0.95rem;
-      color: var(--accent2);
-      background: linear-gradient(120deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      font-weight: 700;
+    .foot {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      column-gap: var(--colgap);
+      row-gap: 2rem;
+      width: min(var(--maxw), calc(100% - (2 * var(--gutter))));
+      margin-inline: auto;
     }
-    .card h2 { font-size: 1.02rem; margin: 0.7rem 0 0.3rem; font-weight: 700; letter-spacing: -0.01em; }
-    .card h2::before { content: "❯ "; color: var(--accent); }
-    .card p { color: var(--muted); font-size: 0.85rem; }
-    .card .go { display: inline-block; margin-top: 0.9rem; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
-    .card:hover .go::after { content: "_"; animation: blink 1s steps(1) infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
-    footer { padding: 2rem; color: var(--muted); font-size: 0.8rem; }
-    footer::before { content: "// "; opacity: 0.6; }
-    footer a { color: var(--muted); }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f7f8fb; --panel: #ffffff; --panel-hover: #f2f3f9;
-        --border: #e3e6ef; --text: #1a1d27; --muted: #5b6376;
-        --accent: #5b4bdb; --accent2: #0f9b8e;
-      }
+    .foot .about { grid-column: 1 / 6; }
+    .foot .about .fm {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-family: var(--serif); font-size: 1.15rem; font-weight: 500; color: var(--ink);
+    }
+    .foot .about .fm svg { width: 21px; height: 21px; }
+    .foot .about p { margin-top: 0.5rem; font-size: 0.92rem; color: var(--ink-3); }
+    .foot nav { grid-column: 8 / -1; display: flex; flex-wrap: wrap; gap: 0.6rem 2rem; align-content: start; }
+    .foot nav a { font-size: 0.9rem; color: var(--ink-2); min-height: 44px; display: inline-flex; align-items: center; }
+    .foot nav a:hover { color: var(--accent); }
+    .foot .meta {
+      grid-column: 1 / -1;
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      color: var(--ink-3);
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--rule);
+    }
+    @media (max-width: 767px) {
+      .foot .about, .foot nav { grid-column: 1 / -1; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <div class="hero">
-      <h1>Continuum</h1>
-      <pre id="ascii" aria-hidden="true"></pre>
-      <p class="tag">A unified runtime for token + tensor execution — one IR, cache-aware scheduling, multi-tier reuse.</p>
-      <div class="badges">
-        <span class="badge">C++ core</span>
-        <span class="badge">Python bindings</span>
-        <span class="badge">Durable checkpoints</span>
-        <span class="badge">Semantic reuse</span>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="grid-rules" aria-hidden="true"></div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="logo" viewBox="0 0 32 32">
+      <path d="M21.8 22.8A9 9 0 1 1 21.8 9.2" fill="none" stroke="currentColor"
+            stroke-width="4.6" stroke-linecap="round" />
+      <circle cx="23" cy="16" r="2.5" fill="#e8623c" />
+    </symbol>
+  </svg>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="wordmark" href="#top" aria-label="Continuum, home">
+        <svg aria-hidden="true"><use href="#logo" /></svg>
+        <span translate="no">Continuum</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#reuse">Reuse</a>
+        <a href="#measured">Measured</a>
+        <a href="#durable">Durability</a>
+        <a href="#backends">Backends</a>
+      </nav>
+      <div class="nav-right">
+        <span class="nav-docs">
+          <span class="label">Docs</span>
+          <a href="https://ct.rithul.dev/python/">Python</a>
+          <span class="sep" aria-hidden="true"></span>
+          <a href="https://ct.rithul.dev/cpp/">C++</a>
+        </span>
+        <a class="gh" href="https://github.com/rithulkamesh/continuum" aria-label="Continuum on GitHub">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.62-3.37-1.37-3.37-1.37-.46-1.18-1.11-1.5-1.11-1.5-.9-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .26.18.59.69.48A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg>
+        </a>
       </div>
     </div>
-    <div class="grid">
-      <a class="card" href="./python/">
-        <div class="icon">&gt;&gt;&gt;</div>
-        <h2>python_api</h2>
-        <p>High-level public API, sessions, reuse policies, examples, and integration surface.</p>
-        <span class="go">read the sphinx docs →</span>
-      </a>
-      <a class="card" href="./cpp/">
-        <div class="icon">{ }</div>
-        <h2>cpp_api</h2>
-        <p>Core runtime internals — IR, interpreter, backend contracts, and the ABI surface.</p>
-        <span class="go">read the doxygen docs →</span>
-      </a>
-      <a class="card" href="https://github.com/rithulkamesh/continuum">
-        <div class="icon">$ git</div>
-        <h2>source</h2>
-        <p>Repository, benchmarks, examples, and the research paper behind the runtime.</p>
-        <span class="go">view on github →</span>
-      </a>
-    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" id="top">
+      <div class="hero-aura" aria-hidden="true"></div>
+      <div class="hero-aura b" aria-hidden="true"></div>
+      <h1 class="reveal">Your agents keep paying to compute the <span class="mark">same thing twice</span>.</h1>
+      <p class="sub reveal">
+        Continuum runs LLM calls and tensor ops as one dataflow graph. It reuses
+        work it has already done, and it can save a running job to bytes and
+        finish it in another process.
+      </p>
+      <div class="actions reveal">
+        <span class="command">
+          <span class="sigil" aria-hidden="true">$</span>
+          <span translate="no">pip install continuum-ai</span>
+          <button type="button" data-copy="pip install continuum-ai" aria-label="Copy the install command">Copy</button>
+        </span>
+        <span class="docnav">
+          <span class="lbl">Docs</span>
+          <a class="textlink" href="https://ct.rithul.dev/python/">Python <span class="arrow" aria-hidden="true">&#8599;</span></a>
+          <a class="textlink" href="https://ct.rithul.dev/cpp/">C++ <span class="arrow" aria-hidden="true">&#8599;</span></a>
+        </span>
+      </div>
+      <dl class="proof reveal">
+        <div><dt>92.5%</dt><dd>fewer tokens on a 20-step agent run</dd></div>
+        <div><dt>0&nbsp;ms</dt><dd>to answer a call it has seen before</dd></div>
+        <div><dt>same result</dt><dd>after a resume or a fork</dd></div>
+      </dl>
+    </section>
+
+    <section class="band" id="problem">
+      <div class="shell">
+        <p class="kicker reveal">01 &middot; The problem</p>
+        <h2 class="statement reveal">Most of an agent run is work it has already done.</h2>
+        <p class="lede reveal">
+          The graph repeats itself. Continuum removes the repeats at the layer
+          where the tokens are actually spent.
+        </p>
+        <ol class="points reveal">
+          <li><span class="num">01</span><span>The system prompt goes to the model on every step, unchanged.</span></li>
+          <li><span class="num">02</span><span>The same question gets asked and answered more than once, word for word or close to it.</span></li>
+          <li><span class="num">03</span><span>A crash at step 19 throws away steps 1 through 18.</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="band alt" id="reuse">
+      <div class="shell">
+        <p class="kicker reveal">02 &middot; Reuse</p>
+        <h2 class="statement reveal">Each call takes the cheapest path that answers it.</h2>
+        <p class="lede reveal">
+          A call checks four caches in order and stops at the first hit. Only a
+          cold call reaches the backend.
+        </p>
+        <ol class="tiers reveal">
+          <li class="tier">
+            <span class="t-name">Memo</span>
+            <span class="t-desc">The same call, seen before. Return the stored answer.</span>
+            <span class="t-cost">0 ms &middot; 0 tokens</span>
+          </li>
+          <li class="tier">
+            <span class="t-name">Semantic</span>
+            <span class="t-desc">Different wording, same question. Matched by embedding.</span>
+            <span class="t-cost">1 lookup &middot; 0 tokens</span>
+          </li>
+          <li class="tier">
+            <span class="t-name">Prefix KV</span>
+            <span class="t-desc">Shared prompt prefix, already tokenized. Send only the new part.</span>
+            <span class="t-cost">~30 tokens sent</span>
+          </li>
+          <li class="tier">
+            <span class="t-name">Layer KV</span>
+            <span class="t-desc">Warm attention state carried forward. Resume the decode.</span>
+            <span class="t-cost">no prefill</span>
+          </li>
+          <li class="tier cold">
+            <span class="t-name">Backend</span>
+            <span class="t-desc">Nothing above matched. One real request to the provider.</span>
+            <span class="t-cost">full cost</span>
+          </li>
+        </ol>
+        <p class="tiers-note reveal">
+          A fifth tier, memory-graph recall, lets an agent pull facts from earlier runs.
+        </p>
+      </div>
+    </section>
+
+    <section class="band" id="measured">
+      <div class="shell">
+        <p class="kicker reveal">03 &middot; Measured</p>
+        <h2 class="statement reveal">Numbers from a live Azure OpenAI backend.</h2>
+        <div class="bigstat reveal">
+          <div class="n">92.5%</div>
+          <p class="c">
+            fewer tokens on a mixed 20-step agent run: shared prefixes, exact
+            repeats, paraphrases, and cold queries. Four of the twenty calls
+            never reached the backend.
+          </p>
+        </div>
+        <div class="bars reveal" id="bars">
+          <div class="bar-row">
+            <span class="lbl"><span>Tokens sent, baseline</span><span>100%</span></span>
+            <div class="bar-track"><div class="bar-fill base" style="transform:scaleX(1)"></div></div>
+          </div>
+          <div class="bar-row">
+            <span class="lbl"><span>Tokens sent, Continuum</span><span>7.5%</span></span>
+            <div class="bar-track"><div class="bar-fill cont" data-scale="0.075"></div></div>
+          </div>
+        </div>
+        <dl class="results reveal">
+          <div><dt>~99%</dt><dd>fewer tokens on a 3,000-character shared prefix. About 30 tokens sent per call.</dd></div>
+          <div><dt>5 / 5</dt><dd>exact repeat calls served from cache, 0 ms each.</dd></div>
+          <div><dt>5.4s to 3.7s</dt><dd>median response time on prefix hits. The network round-trip stays, so time drops less than token cost.</dd></div>
+          <div><dt>80%+</dt><dd>cache hit rate on the first run after restarting in a new session.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="band alt" id="durable">
+      <div class="shell">
+        <p class="kicker reveal">04 &middot; Durable execution</p>
+        <h2 class="statement reveal">Save a running job. Finish it somewhere else.</h2>
+        <p class="lede reveal">
+          A checkpoint holds the graph, every computed value, and the KV cache.
+          It is a byte string. Write it to a file, an object store, or a queue,
+          and any process that can read those bytes can carry the run forward.
+        </p>
+
+        <div class="tabs reveal">
+          <div class="pills" role="tablist" aria-label="Durable execution examples">
+            <button type="button" role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true">Checkpoint &amp; resume</button>
+            <button type="button" role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1">Hand off across processes</button>
+            <button type="button" role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1">Fork an alternate run</button>
+          </div>
+
+          <figure class="code" role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0">
+            <figcaption translate="no">one process</figcaption>
+<pre><span class="kw">from</span> continuum._native <span class="kw">import</span> DurableAgent
+
+agent = DurableAgent()
+agent.begin([<span class="st">"pull the ticket"</span>, <span class="st">"reproduce the bug"</span>, <span class="st">"draft a fix"</span>, <span class="st">"open the PR"</span>])
+
+ckpt = agent.run_until_step(<span class="kw">1</span>)              <span class="cm"># steps 1 and 2 run now</span>
+DurableAgent.inspect(ckpt)                 <span class="cm"># {'executed_nodes': 2, 'checkpoint_bytes': 4812}</span>
+
+outputs = DurableAgent().resume_from(ckpt) <span class="cm"># a fresh runtime finishes steps 3 and 4</span></pre>
+          </figure>
+
+          <figure class="code" role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0" hidden>
+            <figcaption translate="no">three processes, sharing only a file</figcaption>
+<pre><span class="cm">#  plan.py  ·  a small box: run the cheap steps, then park the job</span>
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">from</span> continuum._native <span class="kw">import</span> DurableAgent
+
+agent = DurableAgent()
+agent.begin([<span class="st">"pull the ticket"</span>, <span class="st">"reproduce the bug"</span>, <span class="st">"draft a fix"</span>, <span class="st">"open the PR"</span>])
+Path(<span class="st">"job.ckpt"</span>).write_bytes(agent.run_until_step(<span class="kw">1</span>))   <span class="cm"># steps 1-2, a few KB</span>
+
+
+<span class="cm">#  work.py  ·  a different process, a GPU box, an hour later</span>
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">from</span> continuum._native <span class="kw">import</span> DurableAgent
+
+outputs = DurableAgent().resume_from(Path(<span class="st">"job.ckpt"</span>).read_bytes())
+Path(<span class="st">"job.result"</span>).write_text(repr(outputs))            <span class="cm"># steps 3-4 finish here</span>
+
+
+<span class="cm">#  audit.py  ·  a third process, anywhere, replays the same bytes</span>
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">from</span> continuum._native <span class="kw">import</span> DurableAgent
+
+blob = Path(<span class="st">"job.ckpt"</span>).read_bytes()
+<span class="kw">assert</span> DurableAgent().resume_from(blob) == DurableAgent().resume_from(blob)</pre>
+          </figure>
+          <p class="panel-note" id="note-2" hidden>
+            No shared variable, no message bus. The checkpoint carries the KV cache
+            with it, so <code>work.py</code> resumes warm, and every reader gets the
+            same result.
+          </p>
+
+          <figure class="code" role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0" hidden>
+            <figcaption translate="no">rewind, edit one step, replay</figcaption>
+<pre><span class="kw">from</span> continuum._native <span class="kw">import</span> DurableAgent
+
+rec = DurableAgent()
+rec.begin([<span class="st">"summarize the bug"</span>, <span class="st">"find the module"</span>, <span class="st">"draft a fix"</span>, <span class="st">"write the changelog"</span>])
+ckpt = rec.run_until_step(<span class="kw">1</span>)               <span class="cm"># steps 1 and 2 executed</span>
+step_4 = rec.prompt_node_ids[<span class="kw">3</span>]            <span class="cm"># the step-4 prompt, still pending</span>
+
+real = DurableAgent().resume_from(ckpt)
+what_if = DurableAgent().resume_from(
+    DurableAgent.fork(ckpt, step_4, <span class="st">"write a haiku instead"</span>),
+)
+<span class="cm"># steps 1-3 replay bit for bit; only step 4 and its output diverge</span></pre>
+          </figure>
+        </div>
+
+        <div class="tags reveal">
+          <span class="tag">Checkpoint to bytes</span>
+          <span class="tag">Resume in a new process</span>
+          <span class="tag">Fork from any past step</span>
+          <span class="tag">Deterministic replay</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="backends">
+      <div class="shell">
+        <p class="kicker reveal">05 &middot; One IR</p>
+        <h2 class="statement reveal">One graph for tokens and tensors.</h2>
+        <p class="lede reveal">
+          LLM calls and tensor ops are operators in the same IR, run by the same
+          cache-aware interpreter. Change providers without touching the graph.
+        </p>
+        <div class="backends reveal">
+          <span>Azure OpenAI <small>hosted</small></span>
+          <span>OpenAI <small>hosted</small></span>
+          <span>Anthropic <small>hosted</small></span>
+          <span>vLLM <small>self-hosted</small></span>
+          <span>libtorch <small>in-process</small></span>
+          <span>MLX <small>apple silicon</small></span>
+          <span>FakeLLM <small>tests, deterministic</small></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="start">
+      <div class="shell">
+        <p class="kicker reveal">06 &middot; Start</p>
+        <h2 class="statement reveal">Install it and run the examples.</h2>
+        <p class="lede reveal">
+          Every example uses the FakeLLM backend, so the output is deterministic
+          and safe to run in CI. The import path stays <span translate="no">continuum</span>.
+        </p>
+        <div class="actions reveal" style="grid-column:1/-1;margin-top:2rem;display:flex;flex-wrap:wrap;gap:1rem">
+          <span class="command">
+            <span class="sigil" aria-hidden="true">$</span>
+            <span translate="no">pip install continuum-ai</span>
+            <button type="button" data-copy="pip install continuum-ai" aria-label="Copy the install command">Copy</button>
+          </span>
+        </div>
+        <figure class="code reveal" style="border-radius:4px;margin-top:clamp(2rem,4vw,3rem)">
+          <figcaption translate="no">run the demos</figcaption>
+<pre>PYTHONPATH=python python examples/01_reuse_stack.py       <span class="cm"># every reuse tier, one run</span>
+PYTHONPATH=python python examples/02_durable_agent.py     <span class="cm"># checkpoint, crash, resume</span>
+PYTHONPATH=python python examples/03_time_travel_fork.py  <span class="cm"># rewind, edit, replay</span></pre>
+        </figure>
+        <div class="doclinks reveal">
+          <a href="https://ct.rithul.dev/python/">
+            <span class="h">Python docs</span>
+            <span class="d">The public API: sessions, reuse policies, durable agents.</span>
+            <span class="go">Sphinx &#8599;</span>
+          </a>
+          <a href="https://ct.rithul.dev/cpp/">
+            <span class="h">C++ docs</span>
+            <span class="d">Runtime internals: the IR, the interpreter, backend contracts.</span>
+            <span class="go">Doxygen &#8599;</span>
+          </a>
+          <a href="https://github.com/rithulkamesh/continuum">
+            <span class="h">Source</span>
+            <span class="d">The repo, the benchmark scripts, and the raw data behind every number here.</span>
+            <span class="go">GitHub &#8599;</span>
+          </a>
+        </div>
+      </div>
+    </section>
   </main>
-  <footer>Continuum · MIT licensed</footer>
+
+  <footer>
+    <div class="foot">
+      <div class="about">
+        <span class="fm"><svg aria-hidden="true"><use href="#logo" /></svg><span translate="no">Continuum</span></span>
+        <p>The AI runtime that reuses its work and keeps its place.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="https://ct.rithul.dev/python/">Python docs</a>
+        <a href="https://ct.rithul.dev/cpp/">C++ docs</a>
+        <a href="https://github.com/rithulkamesh/continuum/blob/master/docs/benchmarks.md">Benchmarks</a>
+        <a href="https://github.com/rithulkamesh/continuum">GitHub</a>
+        <a href="https://pypi.org/project/continuum-ai/">PyPI</a>
+      </nav>
+      <p class="meta">MIT licensed. Written in C++, driven from Python. Package: continuum-ai.</p>
+    </div>
+  </footer>
+
+  <span class="sr-only" role="status" aria-live="polite" id="copy-status"></span>
+
   <script>
-    (() => {
-      const el = document.getElementById("ascii");
-      const W = 200, H = 17;
-      const RAMP = " .·:;+=xX#@";
+    (function () {
+      "use strict";
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      // 8-row pixel font for the letters of CONTINUUM; nearest-neighbor
-      // sampled onto the grid, so edges stay crisp at any size.
-      const GLYPHS = {
-        C: ["  #####", " ###   ", "##     ", "##     ", "##     ", "##     ", " ###   ", "  #####"],
-        O: ["  ####  ", " ###### ", "###  ###", "##    ##", "##    ##", "###  ###", " ###### ", "  ####  "],
-        N: ["##    ##", "###   ##", "####  ##", "## ## ##", "##  ####", "##   ###", "##    ##", "##    ##"],
-        T: ["########", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   ", "   ##   "],
-        I: ["####", " ## ", " ## ", " ## ", " ## ", " ## ", " ## ", "####"],
-        U: ["##    ##", "##    ##", "##    ##", "##    ##", "##    ##", "##    ##", " ##  ## ", "  ####  "],
-        M: ["##    ##", "###  ###", "########", "## ## ##", "##    ##", "##    ##", "##    ##", "##    ##"],
+      /* ---- copy buttons ---- */
+      var status = document.getElementById("copy-status");
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-copy]");
+        if (!btn) return;
+        var text = btn.getAttribute("data-copy");
+        var mark = function () {
+          var label = btn.textContent;
+          btn.textContent = "Copied";
+          btn.setAttribute("data-done", "true");
+          if (status) status.textContent = "Copied to clipboard";
+          window.setTimeout(function () {
+            btn.textContent = label;
+            btn.removeAttribute("data-done");
+          }, 1600);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(mark, mark);
+        } else {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); } catch (err) {}
+          ta.remove();
+          mark();
+        }
+      });
+
+      /* ---- nav background on scroll ---- */
+      var nav = document.getElementById("nav");
+      var onScroll = function () {
+        nav.setAttribute("data-scrolled", String(window.scrollY > 16));
       };
-      // stitch the word into one bitmap with 1-col gaps, remembering which
-      // letter owns each bitmap column so letters can get their own effects
-      const WORD = "CONTINUUM";
-      const rows = Array.from({ length: 8 }, () => "");
-      const colOwner = [], starts = [];
-      for (let i = 0; i < WORD.length; i++) {
-        const g = GLYPHS[WORD[i]];
-        starts.push(rows[0].length);
-        for (let r = 0; r < 8; r++) rows[r] += g[r] + " ";
-        for (let c = 0; c < g[0].length; c++) colOwner.push(i);
-        colOwner.push(-1);
-      }
-      const BW = rows[0].length, BH = 8;
-      // letter box inside the grid, sized so pixels render square-ish
-      const TW = W - 10;
-      const TH = Math.round(TW * 0.6 / 1.05 / (BW / BH));
-      const X0 = (W - TW) >> 1, Y0 = (H - TH) >> 1;
-      // cell: 0 background, 1 glyph pixel, 2 cavity inside a U (holds liquid)
-      const cell = new Uint8Array(W * H);
-      const owner = new Int8Array(W * H).fill(-1);
-      for (let y = 0; y < TH; y++)
-        for (let x = 0; x < TW; x++) {
-          const bx = (x / TW * BW) | 0, by = (y / TH * BH) | 0;
-          const o = colOwner[bx], gi = (Y0 + y) * W + X0 + x;
-          owner[gi] = o;
-          if (rows[by][bx] === "#") cell[gi] = 1;
-          else if (o >= 0 && WORD[o] === "U") {
-            const bl = bx - starts[o];
-            if (bl >= 2 && bl <= 5 && by < 6) cell[gi] = 2;
-          }
-        }
-      // the O's box in grid coordinates — the donut spins in here
-      const oIdx = 1;
-      const OX = X0 + Math.round(starts[oIdx] * TW / BW);
-      const OW = Math.round(8 * TW / BW), OH = TH, OY = Y0;
+      onScroll();
+      window.addEventListener("scroll", onScroll, { passive: true });
 
-      const hash = (x, y) => {
-        const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-        return s - Math.floor(s);
+      /* ---- tabs (WAI-ARIA tabs pattern) ---- */
+      var tablist = document.querySelector('[role="tablist"]');
+      if (tablist) {
+        var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+        var note2 = document.getElementById("note-2");
+        var select = function (tab, focus) {
+          tabs.forEach(function (t) {
+            var on = t === tab;
+            t.setAttribute("aria-selected", String(on));
+            t.tabIndex = on ? 0 : -1;
+            var panel = document.getElementById(t.getAttribute("aria-controls"));
+            if (panel) panel.hidden = !on;
+          });
+          if (note2) note2.hidden = tab.id !== "tab-2";
+          if (focus) tab.focus();
+        };
+        tablist.addEventListener("click", function (e) {
+          var tab = e.target.closest('[role="tab"]');
+          if (tab) select(tab, false);
+        });
+        tablist.addEventListener("keydown", function (e) {
+          var i = tabs.indexOf(document.activeElement);
+          if (i < 0) return;
+          var next = null;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") next = tabs[(i + 1) % tabs.length];
+          else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = tabs[(i - 1 + tabs.length) % tabs.length];
+          else if (e.key === "Home") next = tabs[0];
+          else if (e.key === "End") next = tabs[tabs.length - 1];
+          if (next) { e.preventDefault(); select(next, true); }
+        });
+      }
+
+      /* ---- reveal + bar fill ---- */
+      var revealables = [].slice.call(document.querySelectorAll(".reveal"));
+      var fillBars = function () {
+        var cont = document.querySelector("#bars .bar-fill.cont");
+        if (!cont) return;
+        var s = cont.getAttribute("data-scale") || "0.075";
+        if (reduce) { cont.style.transform = "scaleX(" + s + ")"; return; }
+        window.requestAnimationFrame(function () {
+          cont.style.transform = "scaleX(" + s + ")";
+        });
       };
 
-      // the classic spinning torus, z-buffered into a small char box
-      const dbuf = new Int8Array(OW * OH), dz = new Float32Array(OW * OH);
-      function donut(t) {
-        dbuf.fill(-1); dz.fill(0);
-        const A = t * 1.1, B = t * 0.55;
-        const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
-        const R1 = 1, R2 = 2, K2 = 5, K1 = OW * K2 * 3 / (8 * (R1 + R2));
-        for (let th = 0; th < 6.28; th += 0.25) {
-          const ct = Math.cos(th), st = Math.sin(th);
-          for (let ph = 0; ph < 6.28; ph += 0.07) {
-            const cp = Math.cos(ph), sp = Math.sin(ph);
-            const ox = R2 + R1 * ct, oy = R1 * st;
-            const x = ox * (cB * cp + sA * sB * sp) - oy * cA * sB;
-            const y = ox * (sB * cp - sA * cB * sp) + oy * cA * cB;
-            const ooz = 1 / (K2 + cA * ox * sp + oy * sA);
-            const xp = (OW / 2 + K1 * ooz * x) | 0;
-            const yp = (OH / 2 - K1 * ooz * y * 0.55) | 0;
-            if (xp < 0 || xp >= OW || yp < 0 || yp >= OH || ooz <= dz[yp * OW + xp]) continue;
-            const L = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
-            dz[yp * OW + xp] = ooz;
-            dbuf[yp * OW + xp] = Math.max(1, Math.min(10, 2 + L * 6 | 0));
-          }
-        }
+      if (reduce || !("IntersectionObserver" in window)) {
+        revealables.forEach(function (el) { el.classList.add("in"); });
+        fillBars();
+      } else {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            if (!en.isIntersecting) return;
+            io.unobserve(en.target);
+            en.target.classList.add("in");
+            if (en.target.id === "bars") fillBars();
+          });
+        }, { threshold: 0.16, rootMargin: "0px 0px -48px 0px" });
+        revealables.forEach(function (el) { io.observe(el); });
       }
-
-      function frame(t) {
-        donut(t);
-        let out = "";
-        for (let y = 0; y < H; y++) {
-          for (let x = 0; x < W; x++) {
-            const gi = y * W + x;
-            const o = owner[gi], c = cell[gi];
-            const L = o >= 0 ? WORD[o] : "";
-            let idx = 0;
-            if (L === "O" && x >= OX && x < OX + OW && y >= OY && y < OY + OH) {
-              const d = dbuf[(y - OY) * OW + (x - OX)];
-              if (d >= 0) idx = d;
-            } else if (c === 1 && L === "T") {
-              // digital rain streaming down the T
-              const f = (y * 0.13 - t * 1.6 + hash(x, 7) * 3) % 1;
-              idx = 4 + ((1 - (f < 0 ? f + 1 : f)) * 6 | 0);
-            } else if (L === "U" && c) {
-              const phase = o === 6 ? 0 : Math.PI; // the two Us slosh in antiphase
-              const bottom = Y0 + TH * 0.72;
-              const fill = (0.5 + 0.45 * Math.sin(t * 1.4 + phase)) * (bottom - Y0 - 1);
-              const surf = bottom - fill + 0.9 * Math.sin(x * 0.7 + t * 3.2 + phase);
-              if (c === 1) idx = 8; // the cup itself
-              else if (y > surf) idx = y - surf < 1.2 ? 5 : 7; // liquid, lighter at the surface
-            } else if (c === 1) {
-              // plasma shimmer for the remaining letters
-              const w = 0.5 + 0.35 * Math.sin(x * 0.22 - t * 2.2 + Math.sin(y * 0.6 + t * 1.3) * 1.6)
-                            + 0.15 * Math.sin((x + y) * 0.35 + t * 3.1);
-              idx = 5 + Math.max(0, Math.min(4, (w * 5) | 0));
-            } else {
-              // sparse drifting starfield around the letters
-              const n = hash(x, y + ((t * 1.5) | 0));
-              if (n > 0.985) idx = 1 + (hash(y, x) * 2) | 0;
-            }
-            idx = Math.max(0, Math.min(10, idx));
-            out += RAMP[idx];
-          }
-          out += "\n";
-        }
-        el.textContent = out;
-      }
-
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        frame(0);
-        return;
-      }
-      let start;
-      (function loop(ts) {
-        start ??= ts;
-        frame((ts - start) / 1000);
-        requestAnimationFrame(loop);
-      })(performance.now());
     })();
   </script>
 </body>

@@ -61,6 +61,7 @@ demo*
 
 # Generated docs
 docs/api/python/_build/
+docs/api/python/_static/logo.svg
 docs/api/cpp/
 docs/doxygen-awesome-css/
 

@@ -1,0 +1,96 @@
+/* Continuum C++ docs theme: match the landing page.
+   Loaded after doxygen-awesome-css, so these win. Dark ground,
+   Newsreader / Hanken Grotesk / IBM Plex Mono, one rust accent.
+   The webfonts are pulled in by docs/doxygen-header.html.
+   docs/doxygen-header.html also sets <html class="dark-mode">, which
+   is what makes doxygen-awesome's dark palette engage. */
+
+html,
+html:not(.light-mode),
+html.dark-mode {
+  color-scheme: dark;
+
+  --primary-color:        #e8623c;
+  --primary-dark-color:   #c14a2a;
+  --primary-light-color:  #f0866a;
+  --primary-lighter-color: #2a1f17;
+  --primary-lightest-color: #1b1a16;
+
+  --page-background-color:            #100f0d;
+  --page-foreground-color:            #ece9e0;
+  --page-secondary-foreground-color:  #b6b2a6;
+  --separator-color:                  #2a2823;
+  --border-radius-large:  6px;
+  --border-radius-small:  4px;
+  --border-radius-medium: 4px;
+
+  --side-nav-background:        #0d0c0a;
+  --side-nav-foreground:        #b6b2a6;
+  --side-nav-arrow-opacity:     0.5;
+  --toc-background:             #17150f;
+
+  --header-background:          rgba(16, 15, 13, 0.86);
+  --header-foreground:          #ece9e0;
+
+  --code-background:            #1b1a16;
+  --code-foreground:            #ece9e0;
+  --fragment-background:        #1b1a16;
+  --fragment-foreground:        #ece9e0;
+  --fragment-keyword:           #7ea2dd;
+  --fragment-keywordtype:       #7ea2dd;
+  --fragment-keywordflow:       #7ea2dd;
+  --fragment-token:             #9bbb7a;
+  --fragment-comment:           #8a8579;
+  --fragment-link:              #e8623c;
+  --fragment-preprocessor:      #c9b06a;
+
+  --blockquote-background:      #17150f;
+  --blockquote-foreground:      #b6b2a6;
+  --warning-color-bg:           #2a1f17;
+  --note-color-bg:              #17150f;
+
+  --font-family:            "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-family-monospace:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --spacing-small:  6px;
+  --spacing-medium: 12px;
+}
+
+body {
+  background: var(--page-background-color);
+  color: var(--page-foreground-color);
+}
+
+h1, h2, h3, h4, h5,
+div.title,
+#projectname {
+  font-family: "Newsreader", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+#projectname { font-size: 1.4rem; }
+#projectbrief { color: var(--page-secondary-foreground-color); font-style: normal; }
+
+/* Sharp, hairline surfaces. */
+div.fragment,
+pre.fragment,
+.memproto,
+.memdoc,
+table.doxtable td,
+table.doxtable th,
+.directory .levels span {
+  border-radius: 4px;
+}
+.memproto {
+  background: #17150f;
+  border: 1px solid var(--separator-color);
+}
+.memitem { box-shadow: none; border: 1px solid var(--separator-color); border-radius: 4px; }
+
+a { text-underline-offset: 0.15em; }
+a:hover { text-decoration-color: var(--primary-color); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}

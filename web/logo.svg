@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" style="color:#ece9e0" role="img" aria-label="Continuum">
+  <title>Continuum</title>
+  <!-- A bold C: the continuum, and the cycle of reuse. Inherits `color`
+       when inlined; falls back to off-white for <img> use on dark. -->
+  <path d="M21.8 22.8A9 9 0 1 1 21.8 9.2" stroke="currentColor" stroke-width="4.6" stroke-linecap="round" />
+  <!-- The marker in the mouth: the point on the run you can return to. -->
+  <circle cx="23" cy="16" r="2.5" fill="#e8623c" />
+</svg>
