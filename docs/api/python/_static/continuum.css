@@ -1,0 +1,117 @@
+/* Continuum docs theme: match the landing page.
+   Dark engineering instrument, Newsreader / Hanken Grotesk / IBM Plex Mono,
+   one rust accent. Applied on top of Furo. */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* Force the Continuum dark palette regardless of the light/dark toggle. */
+:root,
+body,
+body[data-theme="light"],
+body[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-brand-primary:   #e8623c;
+  --color-brand-content:    #e8623c;
+  --color-brand-visited:    #c9885f;
+
+  --color-background-primary:   #100f0d;
+  --color-background-secondary:  #17150f;
+  --color-background-hover:      #1f1d17;
+  --color-background-hover--transparent: #1f1d1700;
+  --color-background-border:     #2a2823;
+  --color-background-item:       #17150f;
+
+  --color-foreground-primary:    #ece9e0;
+  --color-foreground-secondary:  #b6b2a6;
+  --color-foreground-muted:      #8a8579;
+  --color-foreground-border:     #3b382f;
+
+  --color-sidebar-background:            #0d0c0a;
+  --color-sidebar-background-border:     #2a2823;
+  --color-sidebar-brand-text:            #ece9e0;
+  --color-sidebar-caption-text:          #8a8579;
+  --color-sidebar-link-text:             #b6b2a6;
+  --color-sidebar-link-text--top-level:  #ece9e0;
+  --color-sidebar-item-background--current: #1b1a16;
+  --color-sidebar-item-background--hover:   #1b1a16;
+  --color-sidebar-item-expander-background--hover: #1b1a16;
+  --color-sidebar-search-background:     #0d0c0a;
+  --color-sidebar-search-border:         #3b382f;
+
+  --color-code-background:  #1b1a16;
+  --color-code-foreground:  #ece9e0;
+  --color-inline-code-background: #1b1a16;
+
+  --color-api-background:        #17150f;
+  --color-api-background-hover:  #1f1d17;
+  --color-api-name:              #ece9e0;
+  --color-api-pre-name:          #b6b2a6;
+  --color-api-keyword:           #7ea2dd;
+  --color-api-paren:             #8a8579;
+
+  --color-highlight-on-target:   #2a1f17;
+  --color-problematic:           #f0866a;
+  --color-admonition-background: #17150f;
+
+  --font-stack: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-stack--monospace: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-stack--headings: "Newsreader", Georgia, "Times New Roman", serif;
+
+  --admonition-font-size: 0.9rem;
+  --sidebar-item-spacing-vertical: 0.4rem;
+}
+
+/* Serif statements, like the landing page. */
+h1, h2, h3, h4, h5, h6,
+.sidebar-brand-text {
+  font-family: var(--font-stack--headings);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+h1 { letter-spacing: -0.025em; }
+
+/* Rust underline on hover, not a permanent one. */
+article a.reference:not(.image-reference) {
+  text-decoration-color: var(--color-background-border);
+  text-underline-offset: 0.15em;
+}
+article a.reference:not(.image-reference):hover {
+  text-decoration-color: var(--color-brand-content);
+}
+
+/* Sharp corners, hairline borders: the landing-page language. */
+.highlight,
+.sphinx-tabs,
+pre,
+div.admonition,
+.sidebar-search-container input {
+  border-radius: 4px !important;
+}
+div.admonition {
+  border-left: 2px solid var(--color-brand-primary);
+  border-top: 1px solid var(--color-background-border);
+  border-right: 1px solid var(--color-background-border);
+  border-bottom: 1px solid var(--color-background-border);
+}
+dl.py {
+  border-top: 1px solid var(--color-background-border);
+  padding-top: 0.6rem;
+}
+dl.py dt.sig {
+  background: var(--color-api-background);
+  border: 1px solid var(--color-background-border);
+  border-radius: 4px;
+}
+
+/* The brand mark in the sidebar. */
+.sidebar-logo { max-width: 40px; }
+.sidebar-brand { display: flex; align-items: center; gap: 0.55rem; flex-direction: row; }
+.sidebar-brand-text { font-size: 1.2rem; }
+
+/* Tidy the mobile header. */
+.mobile-header { background: rgba(16, 15, 13, 0.86); backdrop-filter: blur(8px); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

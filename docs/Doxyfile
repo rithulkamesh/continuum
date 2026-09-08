@@ -1,6 +1,12 @@
 PROJECT_NAME           = "Continuum C++ API"
 OUTPUT_DIRECTORY       = docs/api/cpp
-INPUT                  = include/continuum README.md
+INPUT                  = include/continuum \
+                         docs/api/cpp-overview.md \
+                         docs/design/overview.md \
+                         docs/design/runtime.md \
+                         docs/design/cache.md \
+                         docs/design/ir.md \
+                         docs/design/abi.md
 RECURSIVE              = YES
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
@@ -11,12 +17,16 @@ EXTRACT_STATIC         = YES
 QUIET                  = YES
 WARN_IF_UNDOCUMENTED   = NO
 FILE_PATTERNS          = *.hpp *.h
-USE_MDFILE_AS_MAINPAGE = README.md
+USE_MDFILE_AS_MAINPAGE = docs/api/cpp-overview.md
 HAVE_DOT               = NO
 PROJECT_BRIEF          = "Unified runtime for token + tensor execution"
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
-HTML_COLORSTYLE        = LIGHT
+HTML_COLORSTYLE        = DARK
+PROJECT_LOGO           = web/logo.svg
+PROJECT_ICON           = web/logo.svg
+HTML_HEADER            = docs/doxygen-header.html
 HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome-css/doxygen-awesome.css \
-                         docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css
+                         docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css \
+                         docs/continuum-doxygen.css
