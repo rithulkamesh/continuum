@@ -1,4 +1,4 @@
-"""05 - Continuum full reuse stack.
+"""01 - Continuum full reuse stack.
 
 The same LLM workload, run over and over. A naive runtime recomputes every
 token of every call. Continuum recognises four *different* kinds of redundancy

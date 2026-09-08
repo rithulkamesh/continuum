@@ -1,4 +1,15 @@
-# Continuum
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/logo.svg">
+    <img alt="Continuum" src="web/logo-light.svg" width="76" height="76">
+  </picture>
+</p>
+
+<h1 align="center">Continuum</h1>
+
+<p align="center">
+  <em>The AI runtime that never computes the same thing twice, and never loses its place.</em>
+</p>
 
 <p align="center">
   <a href="https://github.com/rithulkamesh/continuum/actions/workflows/ci.yml">
@@ -21,7 +32,7 @@
   </a>
 </p>
 
-**The AI runtime that never computes the same thing twice, and never loses its place.**
+<hr>
 
 Agent workflows burn money recomputing what they already know: the same system
 prompt tokenized ten thousand times, the same subtask answered again, an
@@ -83,6 +94,10 @@ PYTHONPATH=python python examples/01_reuse_stack.py   # --trace for per-tier fir
 PYTHONPATH=python python examples/02_durable_agent.py           # checkpoint / crash / resume
 PYTHONPATH=python python examples/03_time_travel_fork.py        # rewind, edit, replay
 ```
+
+Ten runnable scenarios (support-bot deflection, CI eval replay, agent-fleet
+prefix sharing, spot-eviction resume, prompt A/B, hybrid tensor pipelines) are
+indexed in [`examples/README.md`](examples/README.md).
 
 ## Results
 

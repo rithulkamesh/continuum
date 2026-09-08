@@ -1,4 +1,4 @@
-"""07 - Time-travel debugging: fork an agent run from a past checkpoint.
+"""03 - Time-travel debugging: fork an agent run from a past checkpoint.
 
 Run a 4-step workflow to step 2 and checkpoint. Then resume it twice:
 

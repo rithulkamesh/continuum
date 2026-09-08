@@ -1,4 +1,4 @@
-"""06 - Durable agent: checkpoint mid-run, crash, resume in a fresh runtime.
+"""02 - Durable agent: checkpoint mid-run, crash, resume in a fresh runtime.
 
 A 5-step agent workflow runs to step 2, serializes its full execution state
 (graph + every computed value) to bytes, and "crashes". A brand-new runtime
