@@ -26,27 +26,27 @@ def _run(example: str) -> str:
     return proc.stdout.strip()
 
 
-def test_transformer_from_scratch_matches_golden() -> None:
-    out = _run("03_transformer_from_scratch.py")
-    golden = (GOLDEN / "03_transformer_from_scratch.txt").read_text().strip()
+def test_tiny_transformer_matches_golden() -> None:
+    out = _run("milestones/tiny_transformer.py")
+    golden = (GOLDEN / "tiny_transformer.txt").read_text().strip()
     assert out == golden
 
 
-def test_deterministic_m1_meets_acceptance() -> None:
-    out = _run("02_deterministic_m1.py")
+def test_deterministic_reuse_meets_acceptance() -> None:
+    out = _run("milestones/deterministic_reuse.py")
     assert "cache_hit_rate=80.00%" in out
     assert "acceptance cache_hit>=80%=True latency_reduction>=20%=True" in out
 
 
 def test_m2_benchmark_is_reproducible() -> None:
-    out = _run("04_m2_benchmark_validation.py")
+    out = _run("milestones/qa_benchmark_validation.py")
     assert "M2 BENCHMARK VALIDATION" in out
     assert "dataset_size_per_seed: 200" in out
     assert "train_test_split: 80/20" in out
 
 
 def test_durable_agent_example_resumes_after_crash() -> None:
-    out = _run("06_durable_agent.py")
+    out = _run("02_durable_agent.py")
     assert "fresh runtime resumed: workflow completed, 10 node outputs" in out
     assert "KV cache restored across the process boundary:" in out
     assert "determinism check: two resumes produced identical outputs" in out
@@ -54,14 +54,14 @@ def test_durable_agent_example_resumes_after_crash() -> None:
 
 
 def test_time_travel_fork_example_diverges_only_at_edit() -> None:
-    out = _run("07_time_travel_fork.py")
+    out = _run("03_time_travel_fork.py")
     assert "divergence: 2/8 node outputs differ" in out
     assert "replay check: completed steps identical, only the edit diverged" in out
     assert "time-travel fork: OK" in out
 
 
 def test_reuse_stack_example_shows_all_five_tiers() -> None:
-    out = _run("05_continuum_reuse_stack.py")
+    out = _run("01_reuse_stack.py")
     assert "Continuum - Full Reuse Stack" in out
     # All five reuse tiers reported in the scoreboard.
     for tier in ("Tier 1", "Tier 2", "Tier 3", "Tier 4", "Tier 5"):

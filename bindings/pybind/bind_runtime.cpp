@@ -5,7 +5,7 @@
 #include <continuum/backend/mlx_backend.hpp>
 #include <continuum/backend/vllm_shim.hpp>
 #include <continuum/ir/graph.hpp>
-#include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/kv_prefix_cache.hpp>
 #include <continuum/runtime/checkpoint.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/layer_cache.hpp>

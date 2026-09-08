@@ -32,7 +32,7 @@ jobs:
       - run: mkdir -p site/python site/cpp
       - run: cp -R docs/api/python/_build/* site/python/
       - run: cp -R docs/api/cpp/html/* site/cpp/
-      - run: cp docs/site/index.html site/index.html
+      - run: cp web/index.html site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

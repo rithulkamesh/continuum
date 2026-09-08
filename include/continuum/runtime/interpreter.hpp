@@ -3,7 +3,7 @@
 #include <continuum/backend/backend.hpp>
 #include <continuum/ir/graph.hpp>
 #include <continuum/runtime/checkpoint.hpp>
-#include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/kv_prefix_cache.hpp>
 #include <continuum/runtime/scheduler.hpp>
 #include <continuum/runtime/semantic_cache.hpp>
 #include <continuum/runtime/layer_cache.hpp>

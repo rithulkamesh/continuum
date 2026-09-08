@@ -1,0 +1,35 @@
+# Continuum static analysis. Enforces the cpp-standards skill: RAII, no owning
+# raw pointers, const-correctness, modern idioms. Identifier-naming is left to
+# review because the project uses PascalCase free functions with snake_case
+# locals, which no single clang-tidy naming profile expresses cleanly.
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  misc-const-correctness,
+  misc-unused-parameters,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-using,
+  modernize-use-emplace,
+  modernize-make-unique,
+  modernize-make-shared,
+  modernize-loop-convert,
+  modernize-pass-by-value,
+  performance-*,
+  readability-const-return-type,
+  readability-redundant-member-init,
+  readability-redundant-string-cstr,
+  readability-simplify-boolean-expr,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -performance-avoid-endl
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '(include/continuum|src|bindings)/.*'
+FormatStyle: file

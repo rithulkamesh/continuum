@@ -1,8 +1,11 @@
 # Benchmarks
 
 Isolated per-tier benchmarks against a live Azure OpenAI backend (gpt-5-mini),
-one reuse mechanism enabled at a time. Source and raw data live in
-[`benchmarks/v11/`](../benchmarks/v11/); plots in [`plots/v11/`](../plots/v11/).
+one reuse mechanism enabled at a time. Runner scripts live in
+[`benchmarks/scripts/`](../benchmarks/scripts/), raw data in
+[`benchmarks/data/`](../benchmarks/data/), plots in
+[`benchmarks/plots/`](../benchmarks/plots/), and the written reports in
+[`benchmarks/reports/`](../benchmarks/reports/).
 
 | Mechanism | Workload | Result |
 |---|---|---|
@@ -12,7 +15,7 @@ one reuse mechanism enabled at a time. Source and raw data live in
 | Cross-session cold start | persist cache metadata, restart, reload | >=80% hit rate on first warm run |
 | No-reuse worst case | 4 unrelated queries | ~0.5% overhead, no errors |
 
-![Continuum v1.1 benchmark dashboard](../plots/v11/summary_dashboard.png)
+![Continuum benchmark dashboard](../benchmarks/plots/summary_dashboard.png)
 
 ## Notes
 
@@ -24,4 +27,4 @@ The bundled n-gram embedding provider is a placeholder. Semantic-tier results
 require a real embedding model and are excluded from the headline numbers.
 
 Deterministic, CI-checked versions of every mechanism run offline via the
-FakeLLM backend (`examples/05`-`07`, `tests/python/`).
+FakeLLM backend (`examples/`, `tests/python/`).

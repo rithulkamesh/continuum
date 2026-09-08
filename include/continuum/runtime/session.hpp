@@ -2,7 +2,7 @@
 
 #include <continuum/backend/backend.hpp>
 #include <continuum/ir/graph.hpp>
-#include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/kv_prefix_cache.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/scheduler.hpp>
 #include <continuum/runtime/semantic_cache.hpp>

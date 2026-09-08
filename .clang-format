@@ -1,0 +1,15 @@
+# Continuum C++ formatting. Matches the existing tree: Google base,
+# 2-space indent, 100-column lines.
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++17
+ColumnLimit: 100
+IndentWidth: 2
+AccessModifierOffset: -1
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve
+SortIncludes: CaseInsensitive
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse

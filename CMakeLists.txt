@@ -58,7 +58,7 @@ add_library(continuum_core
     src/ir/effect.cpp
     src/runtime/interpreter.cpp
     src/runtime/scheduler.cpp
-    src/runtime/cache.cpp
+    src/runtime/kv_prefix_cache.cpp
     src/runtime/checkpoint.cpp
     src/runtime/session.cpp
     src/runtime/memo_table.cpp

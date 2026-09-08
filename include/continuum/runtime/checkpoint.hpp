@@ -2,7 +2,7 @@
 
 #include <continuum/ir/graph.hpp>
 #include <continuum/ir/value.hpp>
-#include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/kv_prefix_cache.hpp>
 
 #include <cstdint>
 #include <string>

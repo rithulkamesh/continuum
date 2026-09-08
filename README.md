@@ -79,9 +79,9 @@ alternate = DurableAgent().resume_from(forked)
 See every reuse tier fire in one deterministic run:
 
 ```bash
-PYTHONPATH=python python examples/05_continuum_reuse_stack.py   # --trace for per-tier firing
-PYTHONPATH=python python examples/06_durable_agent.py           # checkpoint / crash / resume
-PYTHONPATH=python python examples/07_time_travel_fork.py        # rewind, edit, replay
+PYTHONPATH=python python examples/01_reuse_stack.py   # --trace for per-tier firing
+PYTHONPATH=python python examples/02_durable_agent.py           # checkpoint / crash / resume
+PYTHONPATH=python python examples/03_time_travel_fork.py        # rewind, edit, replay
 ```
 
 ## Results
@@ -93,8 +93,8 @@ Against a live Azure OpenAI backend, isolated per tier:
 - Mixed 20-step workflow: 92.5% token reduction, 4/20 backend calls eliminated.
 
 Full tables, latency notes, and the scripts behind every number are in
-[`docs/benchmarks.md`](docs/benchmarks.md). Raw data lives in
-[`benchmarks/v11/`](benchmarks/v11/).
+[`docs/benchmarks.md`](docs/benchmarks.md), with raw data and reports under
+[`benchmarks/`](benchmarks/).
 
 ## What Is Implemented
 
@@ -114,7 +114,7 @@ Full tables, latency notes, and the scripts behind every number are in
 ## Learn More
 
 - [How Continuum fits with what you already use](docs/comparison.md), plus what you can build and why it is a runtime, not a wrapper.
-- [Architecture](docs/architecture.md), [runtime model](docs/runtime.md), [cache semantics](docs/cache.md), [IR spec](docs/ir-spec.md).
+- [Design docs](docs/README.md): [architecture](docs/design/overview.md), [runtime model](docs/design/runtime.md), [cache semantics](docs/design/cache.md), [IR](docs/design/ir.md).
 - [Benchmarks](docs/benchmarks.md).
 - [Building the docs](docs/building-docs.md).
 - Hosted API docs: [Python](https://ct.rithul.dev/python/), [C++](https://ct.rithul.dev/cpp/).

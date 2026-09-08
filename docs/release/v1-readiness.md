@@ -9,7 +9,7 @@
 ## CIR Schema Validation
 
 - Canonical schema added at `schema/cir.fbs`.
-- Runtime binary envelope documented in `docs/ir-spec.md`.
+- Runtime binary envelope documented in `docs/design/ir.md`.
 - C++ schema-layout validation test added (`GraphTest.SerializedBinaryMatchesCirSchemaLayout`).
 
 ## API Documentation
@@ -22,15 +22,15 @@
 
 - C ABI boundary introduced: `include/continuum/backend/backend_abi.h`.
 - C++ adapter bridge: `src/backend/backend_abi_adapter.cpp`.
-- ABI notes documented in `docs/abi.md`.
+- ABI notes documented in `docs/design/abi.md`.
 
 ## Reproducible Examples
 
 - Golden-output tests for deterministic examples in `tests/python/test_examples_golden.py`.
 - Benchmark runner + validator scripts:
-  - `scripts/benchmarks/run_examples.py`
-  - `scripts/benchmarks/validate_outputs.py`
-- Local reproducibility check: `PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py` passed.
+  - `benchmarks/scripts/run_examples.py`
+  - `benchmarks/scripts/validate_outputs.py`
+- Local reproducibility check: `PYTHONPATH=python python benchmarks/scripts/run_examples.py | python benchmarks/scripts/validate_outputs.py` passed.
 
 ## CI / Platform Matrix
 

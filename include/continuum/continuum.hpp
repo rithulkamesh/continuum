@@ -8,7 +8,7 @@
 #include <continuum/ir/node.hpp>
 #include <continuum/ir/type.hpp>
 #include <continuum/ir/value.hpp>
-#include <continuum/runtime/cache.hpp>
+#include <continuum/runtime/kv_prefix_cache.hpp>
 #include <continuum/runtime/checkpoint.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/layer_cache.hpp>

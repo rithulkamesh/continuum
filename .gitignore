@@ -31,6 +31,15 @@ cmake-build-*/
 .idea/
 .vscode/
 
+# Local assistant / editor state
+# (.claude/skills/ and CLAUDE.md are tracked on purpose; everything else is not)
+.claude/settings.local.json
+.claude/*.local.json
+CLAUDE.local.md
+.cursor/
+.aider*
+.continue/
+
 # Test, bench, coverage
 .coverage
 coverage.xml

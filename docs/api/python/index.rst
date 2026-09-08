@@ -17,7 +17,7 @@ application and library integrations.
 Examples
 ========
 
-- ``examples/01_research_agent.py``
-- ``examples/02_train_classifier.py``
-- ``examples/03_transformer_from_scratch.py``
-- ``examples/04_m2_benchmark_validation.py``
+- ``examples/01_reuse_stack.py``
+- ``examples/02_durable_agent.py``
+- ``examples/03_time_travel_fork.py``
+- ``examples/milestones/`` -- parity, training, and benchmark-validation demos

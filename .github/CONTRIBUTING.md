@@ -32,7 +32,7 @@ pytest
 Optional reproducibility check:
 
 ```bash
-PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/benchmarks/validate_outputs.py
+PYTHONPATH=python python benchmarks/scripts/run_examples.py | python benchmarks/scripts/validate_outputs.py
 ```
 
 ## Pull Request Guidelines
@@ -43,12 +43,27 @@ PYTHONPATH=python python scripts/benchmarks/run_examples.py | python scripts/ben
 - Use clear commit messages that explain intent.
 - Fill out the PR template completely.
 
+## Commit Hygiene
+
+- Do not add `Co-Authored-By` trailers for AI assistants, or any
+  `Claude-Session`, `Generated-with`, or similar tool-attribution lines, to
+  commit messages or pull request descriptions.
+- Do not commit assistant or editor state: `.claude/settings.local.json`,
+  `CLAUDE.local.md`, `.cursor/`, `.aider*`, scratch planning files, or session
+  transcripts. The tracked `.claude/skills/` and `CLAUDE.md` are the only
+  intentional exceptions.
+- Keep generated output out of git (docs builds, `build/`, `dist/`).
+
 ## Coding Guidelines
 
 - Prefer explicit behavior over hidden magic.
 - Keep backend interoperability explicit and type-safe.
 - Avoid introducing silent cross-backend conversions.
 - Maintain consistency with existing style and architecture.
+- C++: follow [`.clang-format`](../.clang-format) and
+  [`.clang-tidy`](../.clang-tidy), and the checklist in
+  [`.claude/skills/cpp-standards/SKILL.md`](../.claude/skills/cpp-standards/SKILL.md).
+- Python: `ruff` and `mypy` must pass; both run in pre-commit and CI.
 
 ## Reporting Security Issues
 

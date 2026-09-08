@@ -11,18 +11,10 @@ from continuum.nn.module import Module
 from continuum.programs.program import program
 
 
-def test_public_helpers_and_lm() -> None:
-    assert ct.retrieve("q", 2) == ["doc:q:0", "doc:q:1"]
-    assert ct.classify("math please", ["math", "no_math"]) == "math"
-    assert ct.extract_expr("2+2") == "2+2"
-    assert ct.format(2.5) == "2.5"
-    assert ct.format_prompt("a", "b") == "a b"
-    assert ct.critique_prompt("draft") == "critique: draft"
-    assert ct.refine("d", "c") == "d | c"
-    lm = ct.LM("fake/model")
-    assert lm("hello") == "fake/model:hello"
+def test_tool_marker_is_pass_through() -> None:
     marker = ct.tool(lambda x: x)
     assert marker("ok") == "ok"
+    assert set(ct.__all__) == {"Optimizer", "Param", "program", "tool", "nn", "__version__"}
 
 
 def test_param_variants_cover_all_branches() -> None:
@@ -99,12 +91,9 @@ def test_optimizer_branch_coverage() -> None:
     opt.step([1])
 
 
-def test_native_runtime_fallback_helpers() -> None:
-    fn = native._missing_runtime_fn("x")
-    try:
-        fn()
-        assert False
-    except RuntimeError:
-        assert True
+def test_native_module_reexports_are_bound() -> None:
+    # Every __all__ entry resolves to a real attribute of the extension.
+    for name in native.__all__:
+        assert getattr(native, name) is not None
     result = native.benchmark_deterministic_m1(cost_per_token_ms=2.0)
     assert "cache_hit_rate" in result
