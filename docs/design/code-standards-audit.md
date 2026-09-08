@@ -35,7 +35,7 @@ would be pure churn). New code should match the file it lives in.
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
-| P1 | **`ruff` lint was at bare defaults** (`E`, `F` only). Recommend `select = ["E", "F", "W", "I", "B", "UP", "SIM"]`. Deferred: the local toolchain (`ruff`, `mypy`, `pytest`) is not installed in this environment, so the existing tree could not be validated against the stricter set without risking red CI. | medium | open |
+| P1 | **`ruff` lint relied on implicit defaults, which drifted.** A newer ruff widened its default rule set (I/RUF/UP), breaking CI. Pinned `select = ["E4", "E7", "E9", "F"]` (historical default) and `ruff>=0.15,<0.16`. Adopting the wider set (`I`, `B`, `SIM`, `UP`) is still the goal, once the toolchain runs locally. | medium | fixed (config) |
 | P2 | **`mypy` is loose.** `ignore_missing_imports = true` is justified for the native extension, but `warn_redundant_casts`, `warn_unused_ignores`, and `strict_equality` should be added once validated. | low | open |
 | P3 | **`_native.py` masked binary/Python drift.** ~40 symbols pulled via `getattr(_c.runtime, name, None)` then replaced with `_missing_runtime_fn` shims, plus a full Python reimplementation of `benchmark_deterministic_m1`. A stale `.so` failed deep in a benchmark instead of at import. Rewritten to bind every name directly with an explicit `__all__`; a stale build now fails loudly at import. | medium | fixed |
 | P4 | **Fake DSL helpers in the public namespace.** `continuum.retrieve/classify/extract_expr/format/format_prompt/critique_prompt/refine` and `LM` were hardcoded stubs, tested only by asserting the stub returns its constant. Removed. Public surface is now `Optimizer`, `Param`, `program`, `tool`, `nn`. | medium | fixed |
