@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" style="color:#1b1a16" role="img" aria-label="Continuum">
+  <title>Continuum</title>
+  <!-- Dark-stroke variant of web/logo.svg, for light backgrounds
+       (GitHub README light mode). The rust marker is unchanged. -->
+  <path d="M21.8 22.8A9 9 0 1 1 21.8 9.2" stroke="currentColor" stroke-width="4.6" stroke-linecap="round" />
+  <circle cx="23" cy="16" r="2.5" fill="#e8623c" />
+</svg>
