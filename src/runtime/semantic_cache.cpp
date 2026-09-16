@@ -12,12 +12,14 @@ SemanticCacheIndex::SemanticCacheIndex(std::size_t max_entries,
 
 SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
     const std::vector<float>& query_embedding,
-    const std::string& model_id) const {
+    const std::string& model_id,
+    const std::string& cache_namespace) const {
   std::lock_guard<std::mutex> lock(mu_);
 
   LookupResult best;
   for (const auto& entry : entries_) {
     if (entry.model_id != model_id) continue;
+    if (entry.cache_namespace != cache_namespace) continue;
     if (entry.embedding.size() != query_embedding.size()) continue;
 
     float sim = cosine_similarity(query_embedding, entry.embedding);
@@ -34,7 +36,8 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
 
 void SemanticCacheIndex::insert(const std::vector<float>& embedding,
                                 const std::string& model_id,
-                                std::vector<std::uint8_t> output) {
+                                std::vector<std::uint8_t> output,
+                                const std::string& cache_namespace) {
   std::lock_guard<std::mutex> lock(mu_);
 
   if (entries_.size() >= max_entries_ && !entries_.empty()) {
@@ -51,6 +54,7 @@ void SemanticCacheIndex::insert(const std::vector<float>& embedding,
   entry.model_id = model_id;
   entry.cached_output = std::move(output);
   entry.last_access_ns = ++clock_;
+  entry.cache_namespace = cache_namespace;
   entries_.push_back(std::move(entry));
 }
 

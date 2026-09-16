@@ -39,12 +39,14 @@ std::optional<MemoryNode> MemoryGraphStore::get_node(std::uint64_t id) const {
 std::vector<MemoryGraphStore::RetrievalResult>
 MemoryGraphStore::retrieve_similar(const std::vector<float>& query_embedding,
                                    std::size_t max_results,
-                                   float min_similarity) const {
+                                   float min_similarity,
+                                   const std::string& cache_namespace) const {
   std::lock_guard<std::mutex> lock(mu_);
 
   std::vector<RetrievalResult> scored;
   for (const auto& [id, node] : nodes_) {
     if (node.embedding.empty()) continue;
+    if (node.session_id != cache_namespace) continue;
     float sim = SemanticCacheIndex::cosine_similarity(query_embedding, node.embedding);
     if (sim >= min_similarity) {
       scored.push_back({node, sim});

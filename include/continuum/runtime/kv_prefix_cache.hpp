@@ -22,6 +22,8 @@ struct CacheEntry {
   std::int32_t prefix_len = 0;
   continuum::backend::BackendState backend_state{};
   std::int64_t last_used_ns = 0;
+  /// Tenant / deployment namespace; empty preserves single-tenant behavior.
+  std::string cache_namespace;
 };
 
 class KVCacheIndex {
@@ -34,7 +36,8 @@ class KVCacheIndex {
 
   explicit KVCacheIndex(std::size_t max_entries = 8192);
   std::optional<std::pair<CacheEntry, std::int32_t>> longest_prefix(
-      const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens) const;
+      const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens,
+      const std::string& cache_namespace = {}) const;
   void insert(CacheEntry entry, const std::vector<std::int32_t>& token_prefix);
   void insert_unlocked(CacheEntry entry, const std::vector<std::int32_t>& token_prefix);
   void invalidate(void* backend_handle);

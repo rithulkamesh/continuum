@@ -8,8 +8,9 @@ namespace continuum::runtime {
 namespace {
 
 constexpr std::uint32_t kCheckpointMagic = 0x31545043U;  // "CPT1"
-constexpr std::uint16_t kCheckpointVersion = 2;
-// v1 checkpoints have no cache snapshot section; still readable.
+// v1: no cache snapshot. v2: cache snapshot without namespace. v3: per-entry namespace.
+constexpr std::uint16_t kCheckpointVersion = 3;
+constexpr std::uint16_t kCheckpointVersionNoNamespace = 2;
 constexpr std::uint16_t kCheckpointVersionNoSnapshot = 1;
 constexpr std::uint8_t kValueTagTensor = 0;
 constexpr std::uint8_t kValueTagTokens = 1;
@@ -270,6 +271,7 @@ std::vector<std::uint8_t> serialize_checkpoint(const Checkpoint& checkpoint) {
     for (const auto t : e.tokens) WritePrimitive(out, t);
     WritePrimitive(out, static_cast<std::uint64_t>(e.state_bytes.size()));
     WriteBlob(out, e.state_bytes.data(), e.state_bytes.size());
+    WriteString(out, e.cache_namespace);
   }
   return out;
 }
@@ -282,9 +284,13 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes) {
   const std::uint8_t* end = cur + bytes.size();
   const auto magic = ReadPrimitive<std::uint32_t>(cur, end);
   const auto version = ReadPrimitive<std::uint16_t>(cur, end);
-  if (magic != kCheckpointMagic ||
-      (version != kCheckpointVersion && version != kCheckpointVersionNoSnapshot)) {
-    throw std::runtime_error("checkpoint deserialize: unsupported format");
+  if (magic != kCheckpointMagic) {
+    throw std::runtime_error("checkpoint deserialize: unknown magic (expected CPT1)");
+  }
+  if (version != kCheckpointVersion && version != kCheckpointVersionNoNamespace &&
+      version != kCheckpointVersionNoSnapshot) {
+    throw std::runtime_error("checkpoint deserialize: unsupported version " + std::to_string(version) +
+                             " (supported: 1-3)");
   }
   Checkpoint out;
   const auto graph_len = ReadPrimitive<std::uint64_t>(cur, end);
@@ -304,7 +310,7 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes) {
     out.value_map[id] = deserialize_value(cur, static_cast<std::size_t>(value_len));
     cur += value_len;
   }
-  if (version >= kCheckpointVersion) {
+  if (version >= kCheckpointVersionNoNamespace) {
     const auto snap_count = ReadPrimitive<std::uint64_t>(cur, end);
     out.cache_snapshot.reserve(static_cast<std::size_t>(snap_count));
     for (std::uint64_t i = 0; i < snap_count; ++i) {
@@ -325,10 +331,18 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes) {
       }
       e.state_bytes.insert(e.state_bytes.end(), cur, cur + state_len);
       cur += state_len;
+      if (version >= kCheckpointVersion) {
+        e.cache_namespace = ReadString(cur, end);
+      }
       out.cache_snapshot.push_back(std::move(e));
     }
   }
   return out;
+}
+
+std::vector<std::uint8_t> migrate_checkpoint(const std::vector<std::uint8_t>& bytes) {
+  // Known versions deserialize then re-serialize at the current wire format.
+  return serialize_checkpoint(deserialize_checkpoint(bytes));
 }
 
 }  // namespace continuum::runtime

@@ -177,10 +177,12 @@ void MemoTable::set_version(std::size_t v) {
   version_ = v;
 }
 
-MemoKey MemoTable::make_key(const ir::Node& node, const std::vector<Value>& inputs) const {
+MemoKey MemoTable::make_key(const ir::Node& node, const std::vector<Value>& inputs,
+                            const std::string& cache_namespace) const {
   MemoKey key;
   key.node_kind_str = node_kind_to_string(node.kind);
   key.payload_hash = std::to_string(hash_payload(node));
+  key.cache_namespace = cache_namespace;
 
   for (const auto& v : inputs) {
     auto bytes = serialize_value(v);

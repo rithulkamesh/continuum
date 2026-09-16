@@ -786,6 +786,9 @@ void bind_runtime(py::module_& m) {
       }, [](continuum::runtime::Session& self, const continuum::runtime::ReusePolicy& p) {
         self.set_policy(p);
       })
+      .def_property("cache_namespace",
+                    &continuum::runtime::Session::cache_namespace,
+                    &continuum::runtime::Session::set_cache_namespace)
       .def("metrics", [](const continuum::runtime::Session& self) -> const continuum::runtime::ReuseMetrics& {
         return self.metrics();
       }, py::return_value_policy::reference_internal)

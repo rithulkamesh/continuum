@@ -11,8 +11,10 @@
 namespace continuum::runtime {
 
 namespace {
-std::uint64_t hash_prefix(const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens) {
+std::uint64_t hash_prefix(const std::string& model_id, const DecodeParams& decode,
+                          const std::vector<std::int32_t>& tokens, const std::string& cache_namespace) {
   std::uint64_t h = std::hash<std::string>{}(model_id);
+  h ^= std::hash<std::string>{}(cache_namespace) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
   h ^= std::hash<std::string>{}(decode.op_name) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
   h ^= std::hash<std::int32_t>{}(decode.max_tokens) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
   h ^= std::hash<int>{}(static_cast<int>(decode.temperature * 1000.0f)) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
@@ -74,7 +76,8 @@ void CompactEmptyBranches(KVCacheIndex::TrieNode* node) {
 KVCacheIndex::KVCacheIndex(std::size_t max_entries) : max_entries_(max_entries) {}
 
 std::optional<std::pair<CacheEntry, std::int32_t>> KVCacheIndex::longest_prefix(
-    const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens) const {
+    const std::string& model_id, const DecodeParams& decode, const std::vector<std::int32_t>& tokens,
+    const std::string& cache_namespace) const {
   std::lock_guard<std::mutex> lock(mu_);
   const TrieNode* cur = &root_;
   const CacheEntry* best = nullptr;
@@ -86,7 +89,8 @@ std::optional<std::pair<CacheEntry, std::int32_t>> KVCacheIndex::longest_prefix(
       break;
     }
     for (const auto& entry : cur->entries) {
-      if (entry.model_id == model_id && SameDecode(entry.decode, decode) && entry.prefix_len > best_len) {
+      if (entry.model_id == model_id && entry.cache_namespace == cache_namespace &&
+          SameDecode(entry.decode, decode) && entry.prefix_len > best_len) {
         best = &entry;
         best_len = entry.prefix_len;
       }
@@ -107,7 +111,8 @@ std::optional<std::pair<CacheEntry, std::int32_t>> KVCacheIndex::longest_prefix(
     }
   }
   for (auto& entry : mut->entries) {
-    if (entry.model_id == model_id && SameDecode(entry.decode, decode) && entry.prefix_len == best_len &&
+    if (entry.model_id == model_id && entry.cache_namespace == cache_namespace &&
+        SameDecode(entry.decode, decode) && entry.prefix_len == best_len &&
         entry.backend_state.handle == best->backend_state.handle) {
       entry.last_used_ns = static_cast<std::int64_t>(self->logical_clock_);
       return std::make_pair(entry, best_len);
@@ -128,7 +133,7 @@ void KVCacheIndex::insert_unlocked(CacheEntry entry, const std::vector<std::int3
   std::vector<std::int32_t> prefix = token_prefix;
   entry.prefix_len = std::min<std::int32_t>(entry.prefix_len, static_cast<std::int32_t>(prefix.size()));
   prefix.resize(static_cast<std::size_t>(entry.prefix_len));
-  entry.prefix_hash = hash_prefix(entry.model_id, entry.decode, prefix);
+  entry.prefix_hash = hash_prefix(entry.model_id, entry.decode, prefix, entry.cache_namespace);
   entry.last_used_ns = static_cast<std::int64_t>(++logical_clock_);
 
   TrieNode* cur = &root_;
@@ -144,10 +149,11 @@ void KVCacheIndex::insert_unlocked(CacheEntry entry, const std::vector<std::int3
     CacheEntry partial = entry;
     partial.prefix_len = static_cast<std::int32_t>(depth);
     partial.prefix_hash = hash_prefix(partial.model_id, partial.decode,
-        std::vector<std::int32_t>(prefix.begin(), prefix.begin() + depth));
+        std::vector<std::int32_t>(prefix.begin(), prefix.begin() + depth), partial.cache_namespace);
     bool already = false;
     for (const auto& e : cur->entries) {
-      if (e.model_id == partial.model_id && SameDecode(e.decode, partial.decode) &&
+      if (e.model_id == partial.model_id && e.cache_namespace == partial.cache_namespace &&
+          SameDecode(e.decode, partial.decode) &&
           e.prefix_hash == partial.prefix_hash && e.prefix_len == partial.prefix_len) {
         already = true;
         break;
@@ -160,7 +166,8 @@ void KVCacheIndex::insert_unlocked(CacheEntry entry, const std::vector<std::int3
   }
 
   auto existing = std::find_if(cur->entries.begin(), cur->entries.end(), [&](const CacheEntry& e) {
-    return e.model_id == entry.model_id && SameDecode(e.decode, entry.decode) && e.prefix_hash == entry.prefix_hash;
+    return e.model_id == entry.model_id && e.cache_namespace == entry.cache_namespace &&
+           SameDecode(e.decode, entry.decode) && e.prefix_hash == entry.prefix_hash;
   });
   if (existing != cur->entries.end()) {
     *existing = std::move(entry);
@@ -237,7 +244,9 @@ std::size_t KVCacheIndex::size() const {
 namespace {
 
 constexpr const char* kMetadataMagic = "CPKV";
-constexpr std::uint16_t kMetadataVersion = 1;
+// v1: no namespace field. v2: per-entry cache_namespace (empty = single-tenant).
+constexpr std::uint16_t kMetadataVersion = 2;
+constexpr std::uint16_t kMetadataVersionNoNamespace = 1;
 
 struct PersistedEntry {
   std::string model_id;
@@ -246,6 +255,7 @@ struct PersistedEntry {
   std::uint64_t prefix_hash = 0;
   std::vector<std::int32_t> prefix_tokens;
   std::int64_t last_used_ns = 0;
+  std::string cache_namespace;
 };
 
 void WriteU16(std::ostream& os, std::uint16_t v) {
@@ -351,6 +361,7 @@ void CollectPersistedEntries(const KVCacheIndex::TrieNode& node,
     pe.prefix_hash = entry.prefix_hash;
     pe.last_used_ns = entry.last_used_ns;
     pe.prefix_tokens = current_path;
+    pe.cache_namespace = entry.cache_namespace;
     out.push_back(std::move(pe));
   }
   for (const auto& child : node.children) {
@@ -406,6 +417,7 @@ bool KVCacheIndex::save_metadata(const std::string& path) const {
     for (const auto t : e.prefix_tokens) {
       WriteI32(os, t);
     }
+    WriteStr(os, e.cache_namespace);
   }
 
   return os.good();
@@ -417,10 +429,16 @@ bool KVCacheIndex::load_metadata(const std::string& path) {
 
   char magic[4] = {};
   if (!is.read(magic, 4)) return false;
-  if (std::memcmp(magic, kMetadataMagic, 4) != 0) return false;
+  if (std::memcmp(magic, kMetadataMagic, 4) != 0) {
+    throw std::runtime_error("kv cache metadata: unknown magic (expected CPKV)");
+  }
 
   std::uint16_t version;
-  if (!ReadU16(is, version) || version != kMetadataVersion) return false;
+  if (!ReadU16(is, version)) return false;
+  if (version != kMetadataVersion && version != kMetadataVersionNoNamespace) {
+    throw std::runtime_error("kv cache metadata: unsupported version " + std::to_string(version) +
+                             " (supported: 1-2)");
+  }
 
   std::uint32_t count;
   if (!ReadU32(is, count)) return false;
@@ -443,6 +461,9 @@ bool KVCacheIndex::load_metadata(const std::string& path) {
     for (std::uint32_t j = 0; j < token_count; ++j) {
       if (!ReadI32(is, pe.prefix_tokens[j])) return false;
     }
+    if (version >= kMetadataVersion) {
+      if (!ReadStr(is, pe.cache_namespace)) return false;
+    }
 
     loaded.push_back(std::move(pe));
   }
@@ -456,6 +477,7 @@ bool KVCacheIndex::load_metadata(const std::string& path) {
       entry.prefix_len = pe.prefix_len;
       entry.prefix_hash = pe.prefix_hash;
       entry.last_used_ns = pe.last_used_ns;
+      entry.cache_namespace = pe.cache_namespace;
       entry.backend_state = {};
 
       insert_unlocked(std::move(entry), pe.prefix_tokens);

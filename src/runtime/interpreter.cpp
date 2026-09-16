@@ -241,6 +241,7 @@ Checkpoint Interpreter::run_until(ir::NodeId node_id) {
       e.prefix_len = snap.entry.prefix_len;
       e.tokens = snap.tokens;
       e.state_bytes = std::move(state_bytes);
+      e.cache_namespace = snap.entry.cache_namespace;
       cp.cache_snapshot.push_back(std::move(e));
     }
   }
@@ -280,7 +281,7 @@ std::vector<continuum::Value> Interpreter::resume(const Checkpoint& checkpoint) 
       auto imported = token_backend->import_state(e.state_bytes);
       if (!imported.has_value()) continue;
       cache_.insert(
-          CacheEntry{0, e.model_id, e.decode, e.prefix_len, *imported, 0},
+          CacheEntry{0, e.model_id, e.decode, e.prefix_len, *imported, 0, e.cache_namespace},
           e.tokens);
       ++restored;
     }
@@ -379,7 +380,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
 
     // --- v1.1: MemoTable lookup (deterministic exact match) ---
     if (policy_allows_cache && memo_table_ != nullptr && payload != nullptr) {
-      auto memo_key = memo_table_->make_key(n, input_values);
+      auto memo_key = memo_table_->make_key(n, input_values, cache_namespace_);
       auto memo_hit = memo_table_->lookup(memo_key);
       if (memo_hit.has_value()) {
         auto memo_value = MemoTable::deserialize_value(memo_hit->output_bytes);
@@ -400,7 +401,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
       }
       if (!prompt_text.empty()) {
         auto embedding = embedder_->embed(prompt_text);
-        auto sem_result = semantic_cache_->lookup(embedding, model_id);
+        auto sem_result = semantic_cache_->lookup(embedding, model_id, cache_namespace_);
         if (sem_result.above_threshold && !sem_result.output.empty()) {
           auto sem_value = MemoTable::deserialize_value(sem_result.output);
           if (sem_value.has_value()) {
@@ -417,7 +418,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     std::optional<continuum::runtime::CacheEntry> cache_hit;
     std::int32_t prefix_len = 0;
     if (policy_allows_cache && payload != nullptr && !input_tokens.empty()) {
-      auto hit = cache_.longest_prefix(model_id, decode_params, input_tokens);
+      auto hit = cache_.longest_prefix(model_id, decode_params, input_tokens, cache_namespace_);
       if (hit.has_value()) {
         const std::int32_t hit_len = std::min<std::int32_t>(hit->second, static_cast<std::int32_t>(input_tokens.size()));
         if (policy_ == nullptr || policy_->should_attempt(input_tokens, hit_len)) {
@@ -434,7 +435,8 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
       if (policy_allows_cache && !cache_hit.has_value()) {
         auto layer_hit = layer_cache_->find_deepest(
             model_id, decode_hash, input_tokens,
-            /*total_layers=*/std::numeric_limits<std::int32_t>::max(), /*arch_version=*/0);
+            /*total_layers=*/std::numeric_limits<std::int32_t>::max(), /*arch_version=*/0,
+            cache_namespace_);
         if (layer_hit.found) {
           layer_state = layer_hit.state;
           prefix_len = layer_hit.prefix_len;
@@ -473,7 +475,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
       }
       if (!mem_prompt.empty()) {
         mem_embedding = embedder_->embed(mem_prompt);
-        auto related = memory_graph_->retrieve_similar(mem_embedding, 5, 0.7f);
+        auto related = memory_graph_->retrieve_similar(mem_embedding, 5, 0.7f, cache_namespace_);
         if (!related.empty()) {
           LOG_INFO(runtime,
                    "memory_recall backend={} model={} related={} top_sim={:.4f}",
@@ -500,7 +502,8 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
                 decode_params,
                 cache_prefix_len,
                 run_result.resulting_state,
-                0},
+                0,
+                cache_namespace_},
             input_tokens);
         LOG_INFO(
             runtime,
@@ -516,7 +519,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
 
         // --- v1.1: Insert into MemoTable ---
         if (memo_table_ != nullptr) {
-          auto memo_key = memo_table_->make_key(n, input_values);
+          auto memo_key = memo_table_->make_key(n, input_values, cache_namespace_);
           auto output_bytes = MemoTable::serialize_value(out);
           if (!output_bytes.empty()) {
             memo_table_->insert(std::move(memo_key), MemoEntry{std::move(output_bytes), 0, 1, 0});
@@ -533,7 +536,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
             auto embedding = embedder_->embed(prompt_text);
             auto output_bytes = MemoTable::serialize_value(out);
             if (!output_bytes.empty()) {
-              semantic_cache_->insert(embedding, model_id, std::move(output_bytes));
+              semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_);
             }
           }
         }
@@ -551,6 +554,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
           cp.prefix_len = static_cast<std::int32_t>(input_tokens.size());
           cp.arch_version = 0;
           cp.estimated_bytes = static_cast<std::size_t>(input_tokens.size()) * 64;
+          cp.cache_namespace = cache_namespace_;
           layer_cache_->insert(std::move(cp));
         }
 
@@ -560,6 +564,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
           mn.type = MemoryNodeType::Prompt;
           mn.content = std::move(mem_prompt);
           mn.embedding = std::move(mem_embedding);
+          mn.session_id = cache_namespace_;
           memory_graph_->add_node(std::move(mn));
         }
       }

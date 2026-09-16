@@ -39,7 +39,8 @@ class MemoryGraphStore {
   std::vector<RetrievalResult> retrieve_similar(
       const std::vector<float>& query_embedding,
       std::size_t max_results = 5,
-      float min_similarity = 0.7f) const;
+      float min_similarity = 0.7f,
+      const std::string& cache_namespace = {}) const;
 
   void clear();
   std::size_t size() const;

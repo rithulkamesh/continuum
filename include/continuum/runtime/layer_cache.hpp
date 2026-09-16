@@ -19,11 +19,13 @@ struct LayerCheckpointKey {
   std::int32_t layer_id = 0;
   std::uint64_t arch_version = 0;
   std::uint64_t token_hash = 0;
+  std::string cache_namespace;
 
   bool operator==(const LayerCheckpointKey& o) const {
     return model_id == o.model_id && decode_hash == o.decode_hash &&
            prefix_len == o.prefix_len && layer_id == o.layer_id &&
-           arch_version == o.arch_version && token_hash == o.token_hash;
+           arch_version == o.arch_version && token_hash == o.token_hash &&
+           cache_namespace == o.cache_namespace;
   }
 };
 
@@ -35,6 +37,7 @@ struct LayerCheckpointKeyHash {
     h ^= std::hash<std::int32_t>{}(k.layer_id) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     h ^= std::hash<std::uint64_t>{}(k.arch_version) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     h ^= std::hash<std::uint64_t>{}(k.token_hash) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    h ^= std::hash<std::string>{}(k.cache_namespace) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     return h;
   }
 };
@@ -51,6 +54,7 @@ struct LayerCheckpoint {
   std::uint64_t arch_version = 0;
   std::int64_t last_access_ns = 0;
   std::size_t estimated_bytes = 0;
+  std::string cache_namespace;
 };
 
 class LayerKVCacheIndex {
@@ -69,7 +73,8 @@ class LayerKVCacheIndex {
                               const std::string& decode_hash,
                               const std::vector<std::int32_t>& tokens,
                               std::int32_t total_layers,
-                              std::uint64_t arch_version) const;
+                              std::uint64_t arch_version,
+                              const std::string& cache_namespace = {}) const;
 
   void insert(LayerCheckpoint checkpoint);
   void invalidate_model(const std::string& model_id);

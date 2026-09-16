@@ -63,6 +63,7 @@ class BackendRegistry {
   void register_backend(const std::string& name, std::shared_ptr<Backend> backend, int priority = 0);
   std::shared_ptr<Backend> get(const std::string& name) const;
   bool has(const std::string& name) const;
+  /// Returns a backend that supports \p kind, or nullptr if none is registered.
   std::shared_ptr<Backend> get_backend_for(ir::NodeKind kind) const;
   BackendSelection select_backend(const ir::Node& node) const;
 
