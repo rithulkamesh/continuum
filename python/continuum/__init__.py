@@ -9,6 +9,7 @@ the :func:`program` tracer, tunable :class:`Param` values, and the
 from importlib import metadata as _metadata
 
 from . import nn
+from .durable import DurableAgent
 from .frontend.optimizer import Optimizer
 from .frontend.param import Param
 
@@ -30,4 +31,4 @@ try:
 except _metadata.PackageNotFoundError:  # pragma: no cover - source checkout without install
     __version__ = "0+local"
 
-__all__ = ["Optimizer", "Param", "program", "tool", "nn", "__version__"]
+__all__ = ["DurableAgent", "Optimizer", "Param", "program", "tool", "nn", "__version__"]

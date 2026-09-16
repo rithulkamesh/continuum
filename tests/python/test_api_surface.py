@@ -14,7 +14,17 @@ from continuum.programs.program import program
 def test_tool_marker_is_pass_through() -> None:
     marker = ct.tool(lambda x: x)
     assert marker("ok") == "ok"
-    assert set(ct.__all__) == {"Optimizer", "Param", "program", "tool", "nn", "__version__"}
+    assert set(ct.__all__) == {
+        "DurableAgent",
+        "Optimizer",
+        "Param",
+        "program",
+        "tool",
+        "nn",
+        "__version__",
+    }
+    assert ct.DurableAgent is not None
+    assert callable(ct.DurableAgent)
 
 
 def test_param_variants_cover_all_branches() -> None:
