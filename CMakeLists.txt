@@ -11,6 +11,7 @@ option(CONTINUUM_USE_LIBTORCH "Enable libtorch backend" ON)
 option(CONTINUUM_USE_ABSL "Use absl containers/maps" OFF)
 option(CONTINUUM_USE_SPDLOG "Use spdlog logging" ON)
 option(CONTINUUM_USE_CURL "Use libcurl for remote backends" ON)
+option(CONTINUUM_WERROR "Treat warnings as errors" OFF)
 
 if(CONTINUUM_BUILD_PYTHON)
     find_package(pybind11 CONFIG REQUIRED)
@@ -93,6 +94,9 @@ if(CONTINUUM_USE_CURL)
     target_link_libraries(continuum_core PUBLIC CURL::libcurl)
 endif()
 target_compile_options(continuum_core PRIVATE -Wall -Wextra -Wpedantic)
+if(CONTINUUM_WERROR)
+    target_compile_options(continuum_core PRIVATE -Werror)
+endif()
 
 if(CONTINUUM_BUILD_PYTHON)
     pybind11_add_module(_continuum
