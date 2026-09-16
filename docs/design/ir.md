@@ -49,3 +49,9 @@ Conformance is enforced by C++ tests:
 
 - serialize -> deserialize -> semantic equality checks
 - binary layout parser checks for envelope/tag correctness
+- **Golden CIR corpus** under [`tests/data/cir/`](../../tests/data/cir/): one
+  `.cir` file per `NodeKind` (and representative type/payload variants).
+  `CirCorpusTest.GoldenFilesRoundtripByteIdentical` deserializes each file and
+  re-serializes to a **byte-identical** result. CI fails on drift unless you
+  regenerate the corpus (`./build-tests/tests/cpp/gen_cir_corpus`) and document
+  the migration when bumping the CIR version.
