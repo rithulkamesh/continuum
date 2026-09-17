@@ -27,7 +27,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DCONTINUUM_COVERAGE=ON \
   -DCONTINUUM_WERROR=OFF \
   -DPython3_EXECUTABLE="$PYTHON"
-cmake --build "$BUILD_DIR" -j
+cmake --build "$BUILD_DIR" -j 2
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
 REPORT_DIR="$BUILD_DIR/coverage"
