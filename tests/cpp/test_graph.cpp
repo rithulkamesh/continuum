@@ -9,6 +9,8 @@
 #include <continuum/backend/mlx_backend.hpp>
 #include <continuum/runtime/interpreter.hpp>
 #include <continuum/runtime/scheduler.hpp>
+#include <continuum/runtime/memo_table.hpp>
+#include <continuum/runtime/checkpoint.hpp>
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -568,6 +570,71 @@ TEST(CacheTest, DecodeParamsAffectCacheKey) {
       {1, 2, 3, 4});
   EXPECT_TRUE(cache.longest_prefix("openai/gpt-4o-mini", DecodeFor("generate", 0.1f, 64), {1, 2, 3, 4, 9}).has_value());
   EXPECT_FALSE(cache.longest_prefix("openai/gpt-4o-mini", DecodeFor("generate", 0.9f, 64), {1, 2, 3, 4, 9}).has_value());
+}
+
+TEST(CacheTest, NamespaceIsolatesIdenticalPrefixes) {
+  continuum::runtime::KVCacheIndex cache(8);
+  continuum::runtime::CacheEntry a{
+      0, "m", DecodeFor(), 3, continuum::backend::BackendState{reinterpret_cast<void*>(0xA)}, 0, "tenant-a"};
+  continuum::runtime::CacheEntry b{
+      0, "m", DecodeFor(), 3, continuum::backend::BackendState{reinterpret_cast<void*>(0xB)}, 0, "tenant-b"};
+  cache.insert(a, {1, 2, 3});
+  cache.insert(b, {1, 2, 3});
+
+  auto hit_a = cache.longest_prefix("m", DecodeFor(), {1, 2, 3, 4}, "tenant-a");
+  auto hit_b = cache.longest_prefix("m", DecodeFor(), {1, 2, 3, 4}, "tenant-b");
+  auto hit_default = cache.longest_prefix("m", DecodeFor(), {1, 2, 3, 4});
+  ASSERT_TRUE(hit_a.has_value());
+  ASSERT_TRUE(hit_b.has_value());
+  EXPECT_EQ(hit_a->first.backend_state.handle, reinterpret_cast<void*>(0xA));
+  EXPECT_EQ(hit_b->first.backend_state.handle, reinterpret_cast<void*>(0xB));
+  EXPECT_FALSE(hit_default.has_value());
+}
+
+TEST(CacheTest, MemoNamespaceIsolatesIdenticalKeys) {
+  continuum::runtime::MemoTable memo;
+  Graph g;
+  Node tok;
+  tok.kind = NodeKind::TokenOp;
+  tok.debug_name = "tok";
+  tok.payload = TokenOpPayload{"generate", "fake", 0.0f, 8};
+  const NodeId id = g.add_node(tok);
+  const auto& node = g.get(id);
+  std::vector<continuum::Value> inputs{std::string{"hello"}};
+
+  auto key_a = memo.make_key(node, inputs, "ns-a");
+  auto key_b = memo.make_key(node, inputs, "ns-b");
+  EXPECT_FALSE(key_a == key_b);
+  memo.insert(key_a, continuum::runtime::MemoEntry{continuum::runtime::MemoTable::serialize_value(std::string{"out-a"}), 0, 1, 0});
+  EXPECT_TRUE(memo.lookup(key_a).has_value());
+  EXPECT_FALSE(memo.lookup(key_b).has_value());
+}
+
+TEST(CheckpointTest, UnknownVersionIsRefused) {
+  std::vector<std::uint8_t> bogus;
+  const std::uint32_t magic = 0x31545043U;
+  const std::uint16_t version = 99;
+  auto append = [&](auto v) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+    bogus.insert(bogus.end(), p, p + sizeof(v));
+  };
+  append(magic);
+  append(version);
+  EXPECT_THROW(continuum::runtime::deserialize_checkpoint(bogus), std::runtime_error);
+}
+
+TEST(CheckpointTest, MigrateRewritesToCurrentFormat) {
+  Graph g;
+  const NodeId in_id = g.add_node(MakeTensorNode("input"));
+  continuum::runtime::Checkpoint cp;
+  cp.serialized_graph = g.serialize();
+  cp.current_node_index = 0;
+  cp.value_map[in_id] = continuum::TensorValue{torch::tensor({1.0f}), "libtorch"};
+  auto bytes = continuum::runtime::serialize_checkpoint(cp);
+  auto migrated = continuum::runtime::migrate_checkpoint(bytes);
+  auto restored = continuum::runtime::deserialize_checkpoint(migrated);
+  EXPECT_EQ(restored.current_node_index, 0u);
+  EXPECT_EQ(restored.value_map.size(), 1u);
 }
 
 TEST(TypecheckTest, ReportsBinaryTensorOpMismatch) {

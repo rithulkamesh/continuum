@@ -20,6 +20,7 @@ struct SemanticCacheEntry {
   std::vector<std::uint8_t> cached_output;
   std::string model_id;
   std::int64_t last_access_ns = 0;
+  std::string cache_namespace;
 };
 
 class SemanticCacheIndex {
@@ -34,11 +35,13 @@ class SemanticCacheIndex {
   };
 
   LookupResult lookup(const std::vector<float>& query_embedding,
-                      const std::string& model_id) const;
+                      const std::string& model_id,
+                      const std::string& cache_namespace = {}) const;
 
   void insert(const std::vector<float>& embedding,
               const std::string& model_id,
-              std::vector<std::uint8_t> output);
+              std::vector<std::uint8_t> output,
+              const std::string& cache_namespace = {});
 
   void clear();
   std::size_t size() const;

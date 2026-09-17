@@ -17,11 +17,13 @@ struct MemoKey {
   std::string node_kind_str;
   std::string payload_hash;
   std::vector<std::uint8_t> inputs_hash;
+  std::string cache_namespace;
 
   bool operator==(const MemoKey& o) const {
     return node_kind_str == o.node_kind_str &&
            payload_hash == o.payload_hash &&
-           inputs_hash == o.inputs_hash;
+           inputs_hash == o.inputs_hash &&
+           cache_namespace == o.cache_namespace;
   }
 };
 
@@ -39,6 +41,7 @@ struct MemoKeyHash {
     for (auto b : k.inputs_hash) {
       h ^= static_cast<std::size_t>(b) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     }
+    h ^= std::hash<std::string>{}(k.cache_namespace) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     return h;
   }
 };
@@ -59,7 +62,8 @@ class MemoTable {
   std::size_t version() const;
   void set_version(std::size_t v);
 
-  MemoKey make_key(const ir::Node& node, const std::vector<continuum::Value>& inputs) const;
+  MemoKey make_key(const ir::Node& node, const std::vector<continuum::Value>& inputs,
+                   const std::string& cache_namespace = {}) const;
 
   static std::vector<std::uint8_t> serialize_value(const continuum::Value& v);
   static std::optional<continuum::Value> deserialize_value(const std::vector<std::uint8_t>& bytes);

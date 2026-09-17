@@ -20,6 +20,7 @@ struct CheckpointCacheEntry {
   std::int32_t prefix_len = 0;
   std::vector<std::int32_t> tokens;
   std::vector<std::uint8_t> state_bytes;
+  std::string cache_namespace;
 };
 
 struct Checkpoint {
@@ -34,6 +35,10 @@ continuum::Value deserialize_value(const std::uint8_t* data, std::size_t len);
 
 std::vector<std::uint8_t> serialize_checkpoint(const Checkpoint& checkpoint);
 Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes);
+
+/// Upgrade a checkpoint blob from a known older version to the current wire
+/// format. Throws on unknown magic/version.
+std::vector<std::uint8_t> migrate_checkpoint(const std::vector<std::uint8_t>& bytes);
 
 std::vector<std::uint8_t> checkpoint_graph(const ir::Graph& graph);
 ir::Graph restore_graph(const std::vector<std::uint8_t>& bytes);

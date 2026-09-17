@@ -114,7 +114,7 @@ std::vector<continuum::Value> Session::run(
         const bool policy_allows_cache = (policy_.kind != ReusePolicyKind::Never);
 
         if (policy_allows_cache && memo_table_ != nullptr) {
-          auto memo_key = memo_table_->make_key(node, in_vals);
+          auto memo_key = memo_table_->make_key(node, in_vals, cache_namespace_);
           auto memo_result = memo_table_->lookup(memo_key);
           if (memo_result.has_value()) {
             memo_hit = true;
@@ -132,7 +132,7 @@ std::vector<continuum::Value> Session::run(
           }
           if (!prompt_text.empty()) {
             auto embedding = embedder_->embed(prompt_text);
-            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id);
+            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id, cache_namespace_);
             if (sem_result.above_threshold) {
               semantic_hit = true;
               rec.semantic_hit = true;
@@ -145,7 +145,7 @@ std::vector<continuum::Value> Session::run(
         }
 
         if (!memo_hit && !semantic_hit) {
-          auto hit = cache_.longest_prefix(payload->model_id, dp, input_tokens);
+          auto hit = cache_.longest_prefix(payload->model_id, dp, input_tokens, cache_namespace_);
           if (hit.has_value()) {
             std::int32_t hit_len = hit->second;
             if (hit_len > static_cast<std::int32_t>(input_tokens.size())) {
@@ -177,6 +177,7 @@ std::vector<continuum::Value> Session::run(
   interp.set_embedding_provider(embedder_);
   interp.set_layer_cache(layer_cache_);
   interp.set_memory_graph(memory_graph_);
+  interp.set_cache_namespace(cache_namespace_);
   results = interp.run(g, inputs);
   metrics_.run_count++;
 

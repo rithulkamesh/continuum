@@ -36,6 +36,8 @@ class Interpreter {
   void set_embedding_provider(EmbeddingProvider* ep) { embedder_ = ep; }
   void set_layer_cache(LayerKVCacheIndex* lc) { layer_cache_ = lc; }
   void set_memory_graph(MemoryGraphStore* mg) { memory_graph_ = mg; }
+  void set_cache_namespace(std::string ns) { cache_namespace_ = std::move(ns); }
+  const std::string& cache_namespace() const { return cache_namespace_; }
 
   MemoTable* memo_table() const { return memo_table_; }
   SemanticCacheIndex* semantic_cache() const { return semantic_cache_; }
@@ -68,6 +70,7 @@ class Interpreter {
   EmbeddingProvider* embedder_ = nullptr;
   LayerKVCacheIndex* layer_cache_ = nullptr;
   MemoryGraphStore* memory_graph_ = nullptr;
+  std::string cache_namespace_;
 };
 
 }  // namespace continuum::runtime
