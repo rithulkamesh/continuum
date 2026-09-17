@@ -40,7 +40,8 @@ These classes are defined by the C++ pybind bindings and re-exported from
 
 .. code-block:: python
 
-   from continuum._native import DurableAgent, Session, ReusePolicy
+   from continuum import DurableAgent
+   from continuum._native import Session, ReusePolicy
 
 DurableAgent
 ~~~~~~~~~~~~

@@ -20,7 +20,7 @@ import tempfile
 
 os.environ.setdefault("CONTINUUM_LOG_LEVEL", "warn")
 
-from continuum._native import DurableAgent  # noqa: E402
+from continuum import DurableAgent  # noqa: E402
 
 BAR = "=" * 64
 

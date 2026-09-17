@@ -68,7 +68,7 @@ python -m pip install continuum-ai
 Kill an agent mid-run and finish it in a different process:
 
 ```python
-from continuum._native import DurableAgent
+from continuum import DurableAgent
 
 agent = DurableAgent()
 agent.begin(["research the topic", "draft the report", "publish it"])

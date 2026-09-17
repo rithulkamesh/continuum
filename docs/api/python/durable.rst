@@ -27,7 +27,7 @@ Checkpoint and resume
 
 .. code-block:: python
 
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    agent = DurableAgent()
    agent.begin(["pull the ticket", "reproduce the bug", "draft a fix", "open the PR"])
@@ -52,7 +52,7 @@ object store, or a queue. Nothing else has to cross it.
 
    # plan.py : a small box runs the cheap steps, then parks the job
    from pathlib import Path
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    agent = DurableAgent()
    agent.begin(["pull the ticket", "reproduce the bug", "draft a fix", "open the PR"])
@@ -62,7 +62,7 @@ object store, or a queue. Nothing else has to cross it.
 
    # work.py : a different process, a GPU box, an hour later
    from pathlib import Path
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    outputs = DurableAgent().resume_from(Path("job.ckpt").read_bytes())
    Path("job.result").write_text(repr(outputs))
@@ -71,7 +71,7 @@ object store, or a queue. Nothing else has to cross it.
 
    # audit.py : a third process, anywhere, replays the same bytes
    from pathlib import Path
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    blob = Path("job.ckpt").read_bytes()
    assert DurableAgent().resume_from(blob) == DurableAgent().resume_from(blob)
@@ -90,7 +90,7 @@ recomputed; only the edited node and its downstream generation diverge. This is
 
 .. code-block:: python
 
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    rec = DurableAgent()
    rec.begin(["summarize the bug", "find the module", "draft a fix", "write the changelog"])

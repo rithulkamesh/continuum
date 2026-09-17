@@ -38,7 +38,7 @@ A first look
 
 .. code-block:: python
 
-   from continuum._native import DurableAgent
+   from continuum import DurableAgent
 
    agent = DurableAgent()
    agent.begin(["pull the ticket", "reproduce the bug", "draft a fix", "open the PR"])
