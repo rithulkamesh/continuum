@@ -26,6 +26,67 @@ jobs:
       - run: mypy python/continuum
       - run: pytest
 
+  cpp:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Configure and build C++ tests
+        run: |
+          cmake -S . -B build-tests \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCONTINUUM_BUILD_TESTS=ON \
+            -DCONTINUUM_BUILD_PYTHON=OFF \
+            -DCONTINUUM_WERROR=ON
+          cmake --build build-tests -j 2
+      - name: Run ctest
+        run: ctest --test-dir build-tests --output-on-failure
+
+  cpp-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev gcovr
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Coverage build, ctest, and gcovr gate
+        run: |
+          FAIL_UNDER=$(tr -d '[:space:]' < .cpp-cov-fail-under)
+          cmake -S . -B build-coverage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCONTINUUM_BUILD_TESTS=ON \
+            -DCONTINUUM_BUILD_PYTHON=OFF \
+            -DCONTINUUM_COVERAGE=ON
+          cmake --build build-coverage -j 2
+          ctest --test-dir build-coverage --output-on-failure
+          mkdir -p build-coverage/coverage
+          gcovr --root . \
+            --object-directory build-coverage \
+            --exclude '.*/_deps/.*' \
+            --exclude '.*/googletest/.*' \
+            --gcov-ignore-errors=all \
+            --html-details build-coverage/coverage/index.html \
+            --xml build-coverage/coverage/coverage.xml \
+            --print-summary \
+            --fail-under-line "$FAIL_UNDER"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpp-coverage-html
+          path: build-coverage/coverage/
+
   docs:
     runs-on: ubuntu-latest
     steps:
