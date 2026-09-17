@@ -47,7 +47,7 @@ jobs:
             -DCONTINUUM_BUILD_TESTS=ON \
             -DCONTINUUM_BUILD_PYTHON=OFF \
             -DCONTINUUM_WERROR=ON
-          cmake --build build-tests -j
+          cmake --build build-tests -j 2
       - name: Run ctest
         run: ctest --test-dir build-tests --output-on-failure
 
