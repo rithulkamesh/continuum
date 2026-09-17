@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar
+from typing import Any
 
 class NodeKind: ...
 class Node: ...
