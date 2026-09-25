@@ -1003,6 +1003,28 @@ void bind_runtime(py::module_& m) {
     return r;
   });
 
+  auto to_vec = [](const py::bytes& blob) {
+    const std::string raw = blob;
+    return std::vector<std::uint8_t>(raw.begin(), raw.end());
+  };
+  auto to_bytes = [](const std::vector<std::uint8_t>& v) {
+    return py::bytes(reinterpret_cast<const char*>(v.data()), v.size());
+  };
+  m.def("checkpoint_delta", [=](const py::bytes& base, const py::bytes& next) {
+          return to_bytes(continuum::runtime::serialize_checkpoint_delta(
+              continuum::runtime::deserialize_checkpoint(to_vec(base)),
+              continuum::runtime::deserialize_checkpoint(to_vec(next))));
+        }, py::arg("base"), py::arg("next"),
+        "Encode checkpoint `next` as a delta against checkpoint `base` (both full checkpoint bytes).");
+  m.def("apply_checkpoint_delta", [=](const py::bytes& base, const py::bytes& delta) {
+          return to_bytes(continuum::runtime::serialize_checkpoint(continuum::runtime::apply_checkpoint_delta(
+              continuum::runtime::deserialize_checkpoint(to_vec(base)), to_vec(delta))));
+        }, py::arg("base"), py::arg("delta"),
+        "Rebuild the full checkpoint bytes a delta encodes against `base`.");
+  m.def("is_checkpoint_delta", [=](const py::bytes& blob) {
+          return continuum::runtime::is_checkpoint_delta(to_vec(blob));
+        }, py::arg("blob"));
+
   py::class_<PyDurableAgent>(m, "DurableAgent")
       .def(py::init<>())
       .def("begin", &PyDurableAgent::begin, py::arg("prompts"),

@@ -40,6 +40,16 @@ Checkpoint deserialize_checkpoint(const std::vector<std::uint8_t>& bytes);
 /// format. Throws on unknown magic/version.
 std::vector<std::uint8_t> migrate_checkpoint(const std::vector<std::uint8_t>& bytes);
 
+/// Encode \p next relative to \p base: only the values and portable KV
+/// entries that were added, changed, or removed (plus the graph if it
+/// changed). Much smaller than a full checkpoint for consecutive steps.
+std::vector<std::uint8_t> serialize_checkpoint_delta(const Checkpoint& base, const Checkpoint& next);
+/// Rebuild the checkpoint a delta was computed against \p base. Throws on a
+/// malformed delta or one that does not fit \p base.
+Checkpoint apply_checkpoint_delta(const Checkpoint& base, const std::vector<std::uint8_t>& delta);
+/// True when \p bytes start with the delta magic ("CPD1").
+bool is_checkpoint_delta(const std::vector<std::uint8_t>& bytes);
+
 std::vector<std::uint8_t> checkpoint_graph(const ir::Graph& graph);
 ir::Graph restore_graph(const std::vector<std::uint8_t>& bytes);
 

@@ -284,3 +284,40 @@ TEST(VllmShimTest, ExtractJsonStringDecodesEscapes) {
   EXPECT_EQ(VllmShimBackend::ExtractJsonString(body, "missing"), "");
   EXPECT_EQ(VllmShimBackend::ExtractJsonInt(body, "missing"), 0);
 }
+
+TEST(CheckpointDeltaTest, RoundTripsValuesAndCache) {
+  continuum::runtime::Checkpoint base;
+  base.serialized_graph = {1, 2, 3};
+  base.current_node_index = 2;
+  base.value_map[1] = std::string{"a"};
+  base.value_map[2] = std::string{"b"};
+  continuum::runtime::CheckpointCacheEntry e;
+  e.model_id = "m";
+  e.tokens = {1, 2};
+  e.prefix_len = 2;
+  e.state_bytes = {7};
+  base.cache_snapshot.push_back(e);
+
+  continuum::runtime::Checkpoint next = base;
+  next.current_node_index = 4;
+  next.value_map[2] = std::string{"changed"};
+  next.value_map.erase(1);
+  next.value_map[3] = std::int64_t{42};
+  next.cache_snapshot[0].state_bytes = {8};
+  e.tokens = {3};
+  next.cache_snapshot.push_back(e);
+  next.serialized_graph = {9};
+
+  const auto delta = continuum::runtime::serialize_checkpoint_delta(base, next);
+  EXPECT_TRUE(continuum::runtime::is_checkpoint_delta(delta));
+  const auto rebuilt = continuum::runtime::apply_checkpoint_delta(base, delta);
+  EXPECT_EQ(continuum::runtime::serialize_checkpoint(rebuilt), continuum::runtime::serialize_checkpoint(next));
+
+  const auto same = continuum::runtime::serialize_checkpoint_delta(base, base);
+  EXPECT_LT(same.size(), 64u);
+  EXPECT_THROW(continuum::runtime::apply_checkpoint_delta(base, {1, 2, 3, 4, 5, 6}), std::runtime_error);
+  auto truncated = delta;
+  truncated.pop_back();
+  EXPECT_THROW(continuum::runtime::apply_checkpoint_delta(base, truncated), std::runtime_error);
+  EXPECT_FALSE(continuum::runtime::is_checkpoint_delta(continuum::runtime::serialize_checkpoint(base)));
+}

@@ -32,6 +32,10 @@ Frontend
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: continuum.checkpoints
+   :members:
+   :show-inheritance:
+
 .. automodule:: continuum.embeddings
    :members: CallableEmbeddingProvider, OpenAICompatibleEmbeddingProvider, PrecomputedEmbeddingProvider
    :show-inheritance:

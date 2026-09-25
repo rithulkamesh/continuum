@@ -79,6 +79,68 @@ object store, or a queue. Nothing else has to cross it.
 Because the checkpoint carries the KV cache, ``work.py`` resumes warm rather
 than re-tokenizing the prefix from cold.
 
+Checkpoint stores
+-----------------
+
+Instead of moving bytes yourself, hand ``run_until_step`` / ``resume_from`` a
+:class:`~continuum.checkpoints.CheckpointStore` and a key:
+
+.. code-block:: python
+
+   from continuum import DurableAgent
+   from continuum.checkpoints import LocalDirectoryStore, S3Store, GCSStore
+
+   store = LocalDirectoryStore("/mnt/shared/ckpt")
+   # store = S3Store("my-bucket", prefix="continuum")     # pip install boto3
+   # store = GCSStore("my-bucket", prefix="continuum")    # pip install google-cloud-storage
+
+   agent = DurableAgent()
+   agent.begin(["pull the ticket", "reproduce the bug", "draft a fix", "open the PR"])
+   agent.run_until_step(1, store=store, key="ticket-42/step-2")
+
+   # any machine that can reach the store:
+   DurableAgent().resume_from(store=store, key="ticket-42/step-2")
+
+Every store implements ``put``, ``get``, ``exists``, ``list``, ``delete``, and
+an atomic ``put_if_absent``; subclass ``CheckpointStore`` for anything else.
+Local writes are atomic renames, so a reader never sees a partial checkpoint.
+
+Incremental checkpoints, forks, and many workers
+------------------------------------------------
+
+:class:`~continuum.checkpoints.CheckpointLog` keeps a whole run's checkpoint
+stream in one store:
+
+.. code-block:: python
+
+   from continuum.checkpoints import CheckpointLog
+
+   log = CheckpointLog(store, run_id="ticket-42")
+   prev = None
+   for step in range(4):
+       prev = log.commit(agent.run_until_step(step), parent=prev, step=step)
+
+   alt = log.fork(prev, agent.prompt_node_ids[3], "open a draft PR instead")
+   DurableAgent().resume_from(log.load(alt))
+
+- **Deltas.** A checkpoint committed with a ``parent`` is stored as a delta:
+  only the values and KV entries that changed since the parent
+  (:func:`continuum._native.checkpoint_delta`). A full checkpoint is written
+  every ``max_chain`` links (default 16) to bound reconstruction.
+- **Manifest.** Each checkpoint has a JSON record (``log.manifest()``,
+  ``log.record(id)``) naming its parent, its delta base, and its depth, so any
+  step rebuilds with ``log.load(id)``. ``log.lineage(id)`` walks back to the
+  root and ``log.heads()`` lists branch tips.
+- **Fork lineage.** ``log.fork(id, node_id, value)`` records the source
+  checkpoint as ``parent`` and the edited node in ``record.fork``.
+- **Integrity.** Ids are the SHA-256 of the full checkpoint, and ``load``
+  verifies every rebuilt checkpoint against its id
+  (``CheckpointCorruptionError`` otherwise).
+- **Many workers.** Objects and records are write-once
+  (``put_if_absent``) and never modified. Any number of workers can load from
+  and commit to one log with no locks: committing a checkpoint that already
+  exists is a no-op, and different checkpoints never share a key.
+
 Fork a timeline
 ---------------
 

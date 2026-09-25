@@ -43,6 +43,9 @@ GraphBuilder = _rt.GraphBuilder
 Interpreter = _rt.Interpreter
 DurableAgent = _rt.DurableAgent
 eager_step = _rt.eager_step
+checkpoint_delta = _rt.checkpoint_delta
+apply_checkpoint_delta = _rt.apply_checkpoint_delta
+is_checkpoint_delta = _rt.is_checkpoint_delta
 run_tensor_op = _rt.run_tensor_op
 train_classifier_demo = _rt.train_classifier_demo
 
@@ -85,6 +88,9 @@ __all__ = [
     "Interpreter",
     "DurableAgent",
     "eager_step",
+    "checkpoint_delta",
+    "apply_checkpoint_delta",
+    "is_checkpoint_delta",
     "run_tensor_op",
     "train_classifier_demo",
     "Session",
