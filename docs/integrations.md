@@ -70,6 +70,23 @@ proxy = ContinuumProxy(ProxyConfig(upstream="http://localhost:11434/v1"), port=8
 proxy.close()
 ```
 
+## LangChain and LangGraph
+
+[`integrations/langchain`](../integrations/langchain/) is a separate package,
+`continuum-langchain`, so LangChain never becomes a dependency of the engine.
+It contains:
+
+- `ContinuumCache`: a LangChain `BaseCache` on the memo tier, plus the
+  semantic tier if you opt in. Tool calls are never cached.
+- `ContinuumCheckpointSaver`: a LangGraph `BaseCheckpointSaver` that writes to
+  any Continuum `CheckpointStore` (local, S3, GCS). It snapshots a session's
+  prefix-KV index with each checkpoint so a resumed thread starts warm, and it
+  keeps fork lineage from `update_state`.
+- `ContinuumLLM`: a LangChain LLM on a Continuum `Session`.
+
+Both adapters have a runnable example, and CI runs them against the FakeLLM
+backend. See the package README.
+
 ## Python backends
 
 `BackendRegistry.register_python(name, fn)` puts any Python callable behind

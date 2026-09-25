@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "continuum-langchain"
+version = "0.1.0"
+description = "LangChain cache and LangGraph checkpointer backed by the Continuum reuse runtime"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
+# continuum-ai is the engine; LangChain stays out of its dependency tree.
+dependencies = [
+  "continuum-ai>=1.0",
+  "langchain-core>=0.3",
+  "langgraph-checkpoint>=2.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "langgraph>=0.2"]
+
+[project.urls]
+Source = "https://github.com/rithulkamesh/continuum"
+
+[tool.setuptools]
+packages = ["continuum_langchain"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
