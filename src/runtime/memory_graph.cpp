@@ -13,17 +13,21 @@ MemoryGraphStore::MemoryGraphStore(std::size_t max_nodes)
 std::uint64_t MemoryGraphStore::add_node(MemoryNode node) {
   std::lock_guard<std::mutex> lock(mu_);
 
+  node.id = next_id_++;
+  if (max_nodes_ == 0) {
+    return node.id;
+  }
   if (nodes_.size() >= max_nodes_) {
+    // Ids are handed out monotonically, so the smallest id is the oldest node.
     auto oldest = nodes_.begin();
     for (auto it = nodes_.begin(); it != nodes_.end(); ++it) {
-      if (it->second.created_ns < oldest->second.created_ns) {
+      if (it->first < oldest->first) {
         oldest = it;
       }
     }
     nodes_.erase(oldest);
   }
 
-  node.id = next_id_++;
   node.created_ns = std::chrono::steady_clock::now().time_since_epoch().count();
   nodes_[node.id] = node;
   return node.id;
@@ -73,6 +77,16 @@ void MemoryGraphStore::clear() {
 std::size_t MemoryGraphStore::size() const {
   std::lock_guard<std::mutex> lock(mu_);
   return nodes_.size();
+}
+
+std::size_t MemoryGraphStore::estimated_bytes() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::size_t total = 0;
+  for (const auto& [id, node] : nodes_) {
+    total += sizeof(MemoryNode);
+    total += node.content.size() + node.session_id.size() + node.embedding.size() * sizeof(float);
+  }
+  return total;
 }
 
 }  // namespace continuum::runtime

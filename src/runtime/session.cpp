@@ -184,6 +184,27 @@ std::vector<continuum::Value> Session::run(
   return results;
 }
 
+std::vector<CacheTierStats> Session::cache_stats() const {
+  std::vector<CacheTierStats> out;
+  out.push_back({"prefix_kv", cache_.size(), cache_.max_entries(), cache_.estimated_bytes()});
+  if (memo_table_ != nullptr) {
+    out.push_back({"memo", memo_table_->size(), memo_table_->max_entries(), memo_table_->estimated_bytes()});
+  }
+  if (semantic_cache_ != nullptr) {
+    out.push_back({"semantic", semantic_cache_->size(), semantic_cache_->max_entries(),
+                   semantic_cache_->estimated_bytes()});
+  }
+  if (layer_cache_ != nullptr) {
+    out.push_back({"layer_kv", layer_cache_->size(), layer_cache_->max_entries(),
+                   layer_cache_->estimated_bytes()});
+  }
+  if (memory_graph_ != nullptr) {
+    out.push_back({"memory_graph", memory_graph_->size(), memory_graph_->max_nodes(),
+                   memory_graph_->estimated_bytes()});
+  }
+  return out;
+}
+
 bool Session::save_cache_metadata(const std::string& path) const {
   return cache_.save_metadata(path);
 }

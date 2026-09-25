@@ -57,6 +57,12 @@ struct LayerCheckpoint {
   std::string cache_namespace;
 };
 
+/// Per-layer KV checkpoint tier.
+///
+/// Eviction: least-recently-used under two bounds, `max_entries` and
+/// `max_bytes` (the sum of each checkpoint's caller-supplied
+/// `estimated_bytes`). A `find_deepest` hit and `insert` both refresh recency;
+/// entries are dropped oldest-first until both bounds hold.
 class LayerKVCacheIndex {
  public:
   explicit LayerKVCacheIndex(std::size_t max_entries = 4096,
@@ -82,17 +88,23 @@ class LayerKVCacheIndex {
   void clear();
 
   std::size_t size() const;
+  /// Capacity in entries passed at construction.
+  std::size_t max_entries() const { return max_entries_; }
+  /// Byte budget passed at construction.
+  std::size_t max_bytes() const { return max_bytes_; }
+  /// Sum of the resident checkpoints' `estimated_bytes`.
   std::size_t estimated_bytes() const;
 
  private:
   void evict_if_needed();
 
   mutable std::mutex mu_;
-  std::unordered_map<LayerCheckpointKey, LayerCheckpoint, LayerCheckpointKeyHash> entries_;
+  // Mutable so a const lookup can refresh LRU recency on a hit.
+  mutable std::unordered_map<LayerCheckpointKey, LayerCheckpoint, LayerCheckpointKeyHash> entries_;
   std::size_t max_entries_;
   std::size_t max_bytes_;
   std::size_t current_bytes_ = 0;
-  std::uint64_t clock_ = 0;
+  mutable std::uint64_t clock_ = 0;
 };
 
 }  // namespace continuum::runtime

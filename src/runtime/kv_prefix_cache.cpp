@@ -241,6 +241,23 @@ std::size_t KVCacheIndex::size() const {
   return size_;
 }
 
+std::size_t KVCacheIndex::estimated_bytes() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::size_t total = 0;
+  std::function<void(const TrieNode&)> visit = [&](const TrieNode& node) {
+    total += sizeof(TrieNode);
+    for (const auto& entry : node.entries) {
+      total += sizeof(CacheEntry) + entry.model_id.size() + entry.decode.op_name.size() +
+               entry.cache_namespace.size();
+    }
+    for (const auto& child : node.children) {
+      visit(child);
+    }
+  };
+  visit(root_);
+  return total;
+}
+
 namespace {
 
 constexpr const char* kMetadataMagic = "CPKV";

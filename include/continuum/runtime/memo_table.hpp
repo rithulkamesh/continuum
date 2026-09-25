@@ -46,6 +46,12 @@ struct MemoKeyHash {
   }
 };
 
+/// Exact-match memo tier.
+///
+/// Eviction: least-recently-used. `lookup` hits and `insert` both refresh an
+/// entry's recency; once `size()` would exceed `max_entries` the entry with
+/// the oldest access is dropped. Stale-version entries are dropped lazily on
+/// lookup or eagerly via `invalidate_version`.
 class MemoTable {
  public:
   explicit MemoTable(std::size_t max_entries = 4096,
@@ -59,6 +65,10 @@ class MemoTable {
   void clear();
 
   std::size_t size() const;
+  /// Capacity in entries passed at construction.
+  std::size_t max_entries() const { return max_entries_; }
+  /// Approximate resident bytes: keys, cached outputs, and per-entry overhead.
+  std::size_t estimated_bytes() const;
   std::size_t version() const;
   void set_version(std::size_t v);
 

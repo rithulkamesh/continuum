@@ -796,6 +796,17 @@ void bind_runtime(py::module_& m) {
       .def("save_cache_metadata", &continuum::runtime::Session::save_cache_metadata)
       .def("load_cache_metadata", &continuum::runtime::Session::load_cache_metadata)
       .def("cache_size", [](const continuum::runtime::Session& self) { return self.cache().size(); })
+      .def("cache_stats", [](const continuum::runtime::Session& self) {
+             py::dict out;
+             for (const auto& s : self.cache_stats()) {
+               py::dict d;
+               d["entries"] = s.entries;
+               d["capacity"] = s.capacity;
+               d["bytes"] = s.bytes;
+               out[py::str(s.tier)] = d;
+             }
+             return out;
+           })
       .def_property_readonly("id", &continuum::runtime::Session::id)
       .def_property_readonly("run_count", &continuum::runtime::Session::run_count)
       .def("memo_table_ptr", [](const continuum::runtime::Session& self) -> py::object {
@@ -1087,6 +1098,20 @@ void bind_runtime(py::module_& m) {
   // === v1.1 bindings ===
 
   py::class_<continuum::runtime::MemoKey>(m, "MemoKey")
+      .def(py::init<>())
+      .def(py::init([](const std::string& node_kind_str, const std::string& payload_hash,
+                       py::bytes inputs_hash, const std::string& cache_namespace) {
+             continuum::runtime::MemoKey key;
+             key.node_kind_str = node_kind_str;
+             key.payload_hash = payload_hash;
+             const std::string raw(inputs_hash);
+             key.inputs_hash.assign(raw.begin(), raw.end());
+             key.cache_namespace = cache_namespace;
+             return key;
+           }),
+           py::arg("node_kind_str"), py::arg("payload_hash"), py::arg("inputs_hash") = py::bytes(""),
+           py::arg("cache_namespace") = "")
+      .def_readwrite("cache_namespace", &continuum::runtime::MemoKey::cache_namespace)
       .def_readwrite("node_kind_str", &continuum::runtime::MemoKey::node_kind_str)
       .def_readwrite("payload_hash", &continuum::runtime::MemoKey::payload_hash)
       .def_readwrite("inputs_hash", &continuum::runtime::MemoKey::inputs_hash);
@@ -1094,6 +1119,8 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::MemoTable>(m, "MemoTable")
       .def(py::init<std::size_t, std::size_t>(), py::arg("max_entries") = 4096, py::arg("version") = 0)
       .def("size", &continuum::runtime::MemoTable::size)
+      .def("max_entries", &continuum::runtime::MemoTable::max_entries)
+      .def("estimated_bytes", &continuum::runtime::MemoTable::estimated_bytes)
       .def("version", &continuum::runtime::MemoTable::version)
       .def("set_version", &continuum::runtime::MemoTable::set_version)
       .def("lookup", [](const continuum::runtime::MemoTable& self, const continuum::runtime::MemoKey& key) -> py::object {
@@ -1134,28 +1161,32 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::SemanticCacheIndex>(m, "SemanticCacheIndex")
       .def(py::init<std::size_t, float>(), py::arg("max_entries") = 2048, py::arg("similarity_threshold") = 0.85f)
       .def("size", &continuum::runtime::SemanticCacheIndex::size)
+      .def("max_entries", &continuum::runtime::SemanticCacheIndex::max_entries)
+      .def("estimated_bytes", &continuum::runtime::SemanticCacheIndex::estimated_bytes)
       .def("similarity_threshold", &continuum::runtime::SemanticCacheIndex::similarity_threshold)
       .def("set_similarity_threshold", &continuum::runtime::SemanticCacheIndex::set_similarity_threshold)
       .def("lookup", [](const continuum::runtime::SemanticCacheIndex& self,
-                          py::list query_embedding, const std::string& model_id) -> py::dict {
+                          py::list query_embedding, const std::string& model_id,
+                          const std::string& cache_namespace) -> py::dict {
              std::vector<float> emb;
              for (auto x : query_embedding) emb.push_back(py::cast<float>(x));
-             auto r = self.lookup(emb, model_id);
+             auto r = self.lookup(emb, model_id, cache_namespace);
              py::dict d;
              d["output"] = py::bytes(reinterpret_cast<const char*>(r.output.data()), r.output.size());
              d["similarity"] = r.similarity;
              d["above_threshold"] = r.above_threshold;
              return d;
-           }, py::arg("query_embedding"), py::arg("model_id"))
+           }, py::arg("query_embedding"), py::arg("model_id"), py::arg("cache_namespace") = "")
       .def("insert", [](continuum::runtime::SemanticCacheIndex& self,
                           py::list embedding, const std::string& model_id,
-                          py::bytes output_bytes) {
+                          py::bytes output_bytes, const std::string& cache_namespace) {
              std::vector<float> emb;
              for (auto x : embedding) emb.push_back(py::cast<float>(x));
              std::string bytes(output_bytes);
              std::vector<std::uint8_t> out(bytes.begin(), bytes.end());
-             self.insert(emb, model_id, std::move(out));
-           }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"))
+             self.insert(emb, model_id, std::move(out), cache_namespace);
+           }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"),
+           py::arg("cache_namespace") = "")
       .def("clear", &continuum::runtime::SemanticCacheIndex::clear)
       .def_static("cosine_similarity", [](py::list a, py::list b) {
         std::vector<float> va, vb;
@@ -1167,12 +1198,80 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::MemoryGraphStore>(m, "MemoryGraphStore")
       .def(py::init<std::size_t>(), py::arg("max_nodes") = 8192)
       .def("size", &continuum::runtime::MemoryGraphStore::size)
+      .def("max_nodes", &continuum::runtime::MemoryGraphStore::max_nodes)
+      .def("estimated_bytes", &continuum::runtime::MemoryGraphStore::estimated_bytes)
+      .def("add_node", [](continuum::runtime::MemoryGraphStore& self, const std::string& content,
+                          std::vector<float> embedding, const std::string& cache_namespace,
+                          int node_type) {
+             continuum::runtime::MemoryNode node;
+             node.type = static_cast<continuum::runtime::MemoryNodeType>(node_type);
+             node.content = content;
+             node.embedding = std::move(embedding);
+             node.session_id = cache_namespace;
+             return self.add_node(std::move(node));
+           }, py::arg("content"), py::arg("embedding"), py::arg("cache_namespace") = "",
+           py::arg("node_type") = 0)
+      .def("get_node", [](const continuum::runtime::MemoryGraphStore& self, std::uint64_t id) -> py::object {
+             auto node = self.get_node(id);
+             if (!node.has_value()) return py::none();
+             py::dict d;
+             d["id"] = node->id;
+             d["type"] = static_cast<int>(node->type);
+             d["content"] = node->content;
+             d["cache_namespace"] = node->session_id;
+             return d;
+           }, py::arg("id"))
+      .def("retrieve_similar", [](const continuum::runtime::MemoryGraphStore& self,
+                                  const std::vector<float>& query, std::size_t max_results,
+                                  float min_similarity, const std::string& cache_namespace) {
+             py::list out;
+             for (const auto& r : self.retrieve_similar(query, max_results, min_similarity, cache_namespace)) {
+               py::dict d;
+               d["id"] = r.node.id;
+               d["content"] = r.node.content;
+               d["similarity"] = r.similarity;
+               out.append(d);
+             }
+             return out;
+           }, py::arg("query_embedding"), py::arg("max_results") = 5, py::arg("min_similarity") = 0.7f,
+           py::arg("cache_namespace") = "")
       .def("clear", &continuum::runtime::MemoryGraphStore::clear);
 
   py::class_<continuum::runtime::LayerKVCacheIndex>(m, "LayerKVCacheIndex")
       .def(py::init<std::size_t, std::size_t>(), py::arg("max_entries") = 4096, py::arg("max_bytes") = 256 * 1024 * 1024)
       .def("size", &continuum::runtime::LayerKVCacheIndex::size)
+      .def("max_entries", &continuum::runtime::LayerKVCacheIndex::max_entries)
+      .def("max_bytes", &continuum::runtime::LayerKVCacheIndex::max_bytes)
       .def("estimated_bytes", &continuum::runtime::LayerKVCacheIndex::estimated_bytes)
+      .def("insert", [](continuum::runtime::LayerKVCacheIndex& self, const std::string& model_id,
+                        const std::vector<std::int32_t>& tokens, std::int32_t layer_id,
+                        std::size_t estimated_bytes, const std::string& decode_hash,
+                        std::uint64_t arch_version, const std::string& cache_namespace) {
+             continuum::runtime::LayerCheckpoint cp;
+             cp.model_id = model_id;
+             cp.tokens = tokens;
+             cp.prefix_len = static_cast<std::int32_t>(tokens.size());
+             cp.layer_id = layer_id;
+             cp.estimated_bytes = estimated_bytes;
+             cp.decode_hash = decode_hash;
+             cp.arch_version = arch_version;
+             cp.cache_namespace = cache_namespace;
+             self.insert(std::move(cp));
+           }, py::arg("model_id"), py::arg("tokens"), py::arg("layer_id"), py::arg("estimated_bytes"),
+           py::arg("decode_hash") = "", py::arg("arch_version") = 0, py::arg("cache_namespace") = "")
+      .def("find_deepest", [](const continuum::runtime::LayerKVCacheIndex& self, const std::string& model_id,
+                              const std::vector<std::int32_t>& tokens, std::int32_t total_layers,
+                              const std::string& decode_hash, std::uint64_t arch_version,
+                              const std::string& cache_namespace) {
+             const auto r = self.find_deepest(model_id, decode_hash, tokens, total_layers, arch_version,
+                                              cache_namespace);
+             py::dict d;
+             d["found"] = r.found;
+             d["layer_id"] = r.layer_id;
+             d["prefix_len"] = r.prefix_len;
+             return d;
+           }, py::arg("model_id"), py::arg("tokens"), py::arg("total_layers"), py::arg("decode_hash") = "",
+           py::arg("arch_version") = 0, py::arg("cache_namespace") = "")
       .def("clear", &continuum::runtime::LayerKVCacheIndex::clear);
 
   py::class_<continuum::runtime::FutureCache>(m, "FutureCache")
@@ -1197,6 +1296,8 @@ void bind_runtime(py::module_& m) {
       .def("invalidate", &continuum::runtime::FutureCache::invalidate,
           py::arg("key"))
       .def("size", &continuum::runtime::FutureCache::size)
+      .def("max_entries", &continuum::runtime::FutureCache::max_entries)
+      .def("estimated_bytes", &continuum::runtime::FutureCache::estimated_bytes)
       .def("clear", &continuum::runtime::FutureCache::clear);
 
   m.def("run_v11_benchmark", [](double cost_per_token_ms, int num_steps,

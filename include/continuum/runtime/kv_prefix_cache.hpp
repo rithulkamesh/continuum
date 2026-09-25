@@ -26,6 +26,12 @@ struct CacheEntry {
   std::string cache_namespace;
 };
 
+/// Prefix-KV tier: a token trie of reusable backend states.
+///
+/// Eviction: least-recently-used. Every trie depth covered by an insert holds
+/// its own entry, so `size()` counts per-depth entries. `insert` and a
+/// `longest_prefix` hit refresh recency; once `size()` exceeds `max_entries`
+/// the least recently used entry is removed and empty branches are compacted.
 class KVCacheIndex {
  public:
   struct TrieNode {
@@ -43,6 +49,11 @@ class KVCacheIndex {
   void invalidate(void* backend_handle);
   void clear();
   std::size_t size() const;
+  /// Capacity in entries passed at construction.
+  std::size_t max_entries() const { return max_entries_; }
+  /// Approximate resident bytes of the index itself: trie nodes plus entry
+  /// metadata. Backend-owned state behind each handle is not counted.
+  std::size_t estimated_bytes() const;
 
   bool save_metadata(const std::string& path) const;
   bool load_metadata(const std::string& path);

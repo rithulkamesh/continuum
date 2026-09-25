@@ -19,6 +19,11 @@ struct PrefetchEntry {
   std::int64_t compute_budget_ms = 0;
 };
 
+/// Speculative-prefetch tier.
+///
+/// Eviction: time-to-live first, then first-in-first-out. Entries older than
+/// `ttl` are invisible to `get` / `has` and are purged on the next `put`; if
+/// the table still exceeds `max_entries` the oldest-created entry is dropped.
 class FutureCache {
  public:
   explicit FutureCache(std::size_t max_entries = 256,
@@ -30,6 +35,10 @@ class FutureCache {
   void invalidate(const std::string& key);
   void clear();
   std::size_t size() const;
+  /// Capacity in entries passed at construction.
+  std::size_t max_entries() const { return max_entries_; }
+  /// Approximate resident bytes: keys, outputs, and per-entry overhead.
+  std::size_t estimated_bytes() const;
 
  private:
   void evict_expired();

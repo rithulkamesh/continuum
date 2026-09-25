@@ -28,7 +28,7 @@ void FutureCache::put(const std::string& key, std::vector<std::uint8_t> output) 
   entry.valid = true;
   entry.created_at = std::chrono::steady_clock::now();
   evict_expired();
-  if (entries_.size() > max_entries_) {
+  while (!entries_.empty() && entries_.size() > max_entries_) {
     auto oldest = entries_.begin();
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
       if (it->second.created_at < oldest->second.created_at) {
@@ -66,6 +66,15 @@ void FutureCache::clear() {
 std::size_t FutureCache::size() const {
   std::lock_guard<std::mutex> lock(mu_);
   return entries_.size();
+}
+
+std::size_t FutureCache::estimated_bytes() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::size_t total = 0;
+  for (const auto& [key, entry] : entries_) {
+    total += sizeof(PrefetchEntry) + key.size() + entry.key.size() + entry.output.size();
+  }
+  return total;
 }
 
 void FutureCache::evict_expired() {

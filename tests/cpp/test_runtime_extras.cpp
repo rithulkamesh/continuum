@@ -9,6 +9,7 @@
 #include <continuum/runtime/memory_graph.hpp>
 #include <continuum/runtime/scheduler.hpp>
 #include <continuum/runtime/semantic_cache.hpp>
+#include <continuum/runtime/session.hpp>
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -227,4 +228,46 @@ TEST(MemoryGraphTest, InsertAndRetrieveSimilar) {
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits.front().node.content, "hello");
   EXPECT_TRUE(store.retrieve_similar({0.0f, 1.0f}, 3, 0.99f).empty());
+}
+
+TEST(EvictionTest, SemanticLookupRefreshesLru) {
+  continuum::runtime::SemanticCacheIndex sc(2, 0.99f);
+  sc.insert({1.0f, 0.0f, 0.0f}, "m", {1});
+  sc.insert({0.0f, 1.0f, 0.0f}, "m", {2});
+  ASSERT_TRUE(sc.lookup({1.0f, 0.0f, 0.0f}, "m").above_threshold);
+  sc.insert({0.0f, 0.0f, 1.0f}, "m", {3});
+  EXPECT_EQ(sc.size(), 2u);
+  EXPECT_TRUE(sc.lookup({1.0f, 0.0f, 0.0f}, "m").above_threshold);
+  EXPECT_FALSE(sc.lookup({0.0f, 1.0f, 0.0f}, "m").above_threshold);
+  EXPECT_GT(sc.estimated_bytes(), 0u);
+}
+
+TEST(EvictionTest, MemoryGraphIsFifo) {
+  continuum::runtime::MemoryGraphStore store(2);
+  continuum::runtime::MemoryNode n;
+  n.embedding = {1.0f};
+  const auto first = store.add_node(n);
+  const auto second = store.add_node(n);
+  store.add_node(n);
+  EXPECT_EQ(store.size(), 2u);
+  EXPECT_FALSE(store.get_node(first).has_value());
+  EXPECT_TRUE(store.get_node(second).has_value());
+  EXPECT_GT(store.estimated_bytes(), 0u);
+
+  continuum::runtime::MemoryGraphStore empty(0);
+  empty.add_node(n);
+  EXPECT_EQ(empty.size(), 0u);
+}
+
+TEST(EvictionTest, SessionReportsTierStats) {
+  continuum::backend::BackendRegistry registry;
+  continuum::runtime::Session session("s", registry, 4);
+  continuum::runtime::MemoTable memo(3, 0);
+  session.set_memo_table(&memo);
+  const auto stats = session.cache_stats();
+  ASSERT_EQ(stats.size(), 2u);
+  EXPECT_EQ(stats[0].tier, "prefix_kv");
+  EXPECT_EQ(stats[0].capacity, 4u);
+  EXPECT_EQ(stats[1].tier, "memo");
+  EXPECT_EQ(stats[1].capacity, 3u);
 }

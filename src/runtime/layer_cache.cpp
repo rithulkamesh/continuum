@@ -30,7 +30,8 @@ LayerKVCacheIndex::LookupResult LayerKVCacheIndex::find_deepest(
   std::lock_guard<std::mutex> lock(mu_);
 
   LookupResult best;
-  for (const auto& [key, cp] : entries_) {
+  LayerCheckpoint* best_cp = nullptr;
+  for (auto& [key, cp] : entries_) {
     if (key.model_id != model_id || key.decode_hash != decode_hash ||
         key.arch_version != arch_version || key.cache_namespace != cache_namespace) {
       continue;
@@ -52,7 +53,11 @@ LayerKVCacheIndex::LookupResult LayerKVCacheIndex::find_deepest(
       best.layer_id = cp.layer_id;
       best.prefix_len = cp.prefix_len;
       best.found = true;
+      best_cp = &cp;
     }
+  }
+  if (best_cp != nullptr) {
+    best_cp->last_access_ns = static_cast<std::int64_t>(++clock_);
   }
   return best;
 }
@@ -69,7 +74,7 @@ void LayerKVCacheIndex::insert(LayerCheckpoint checkpoint) {
   key.token_hash = HashTokens(checkpoint.tokens);
   key.cache_namespace = checkpoint.cache_namespace;
 
-  checkpoint.last_access_ns = ++clock_;
+  checkpoint.last_access_ns = static_cast<std::int64_t>(++clock_);
 
   auto it = entries_.find(key);
   if (it != entries_.end()) {

@@ -17,7 +17,8 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
   std::lock_guard<std::mutex> lock(mu_);
 
   LookupResult best;
-  for (const auto& entry : entries_) {
+  SemanticCacheEntry* best_entry = nullptr;
+  for (auto& entry : entries_) {
     if (entry.model_id != model_id) continue;
     if (entry.cache_namespace != cache_namespace) continue;
     if (entry.embedding.size() != query_embedding.size()) continue;
@@ -28,8 +29,12 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
       if (sim >= similarity_threshold_) {
         best.above_threshold = true;
         best.output = entry.cached_output;
+        best_entry = &entry;
       }
     }
+  }
+  if (best_entry != nullptr) {
+    best_entry->last_access_ns = static_cast<std::int64_t>(++clock_);
   }
   return best;
 }
@@ -39,8 +44,11 @@ void SemanticCacheIndex::insert(const std::vector<float>& embedding,
                                 std::vector<std::uint8_t> output,
                                 const std::string& cache_namespace) {
   std::lock_guard<std::mutex> lock(mu_);
+  if (max_entries_ == 0) {
+    return;
+  }
 
-  if (entries_.size() >= max_entries_ && !entries_.empty()) {
+  if (entries_.size() >= max_entries_) {
     auto it = std::min_element(
         entries_.begin(), entries_.end(),
         [](const SemanticCacheEntry& a, const SemanticCacheEntry& b) {
@@ -53,7 +61,7 @@ void SemanticCacheIndex::insert(const std::vector<float>& embedding,
   entry.embedding = embedding;
   entry.model_id = model_id;
   entry.cached_output = std::move(output);
-  entry.last_access_ns = ++clock_;
+  entry.last_access_ns = static_cast<std::int64_t>(++clock_);
   entry.cache_namespace = cache_namespace;
   entries_.push_back(std::move(entry));
 }
@@ -67,6 +75,17 @@ void SemanticCacheIndex::clear() {
 std::size_t SemanticCacheIndex::size() const {
   std::lock_guard<std::mutex> lock(mu_);
   return entries_.size();
+}
+
+std::size_t SemanticCacheIndex::estimated_bytes() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::size_t total = 0;
+  for (const auto& entry : entries_) {
+    total += sizeof(SemanticCacheEntry);
+    total += entry.embedding.size() * sizeof(float);
+    total += entry.cached_output.size() + entry.model_id.size() + entry.cache_namespace.size();
+  }
+  return total;
 }
 
 float SemanticCacheIndex::similarity_threshold() const {

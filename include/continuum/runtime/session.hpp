@@ -85,6 +85,14 @@ struct ReuseMetrics {
   }
 };
 
+/// Occupancy snapshot of one reuse tier, for observability.
+struct CacheTierStats {
+  std::string tier;        ///< "prefix_kv", "memo", "semantic", "layer_kv", or "memory_graph".
+  std::size_t entries = 0; ///< Resident entries.
+  std::size_t capacity = 0;///< Entry bound the tier evicts at.
+  std::size_t bytes = 0;   ///< Approximate resident bytes (see each tier's `estimated_bytes`).
+};
+
 class Session {
  public:
   explicit Session(const std::string& id, backend::BackendRegistry& backends,
@@ -112,6 +120,9 @@ class Session {
   const KVCacheIndex& cache() const { return cache_; }
   MemoTable* memo_table() const { return memo_table_; }
   SemanticCacheIndex* semantic_cache() const { return semantic_cache_; }
+
+  /// Occupancy of every attached tier; detached tiers are omitted.
+  std::vector<CacheTierStats> cache_stats() const;
 
   const std::string& id() const { return session_id_; }
   std::int64_t run_count() const { return metrics_.run_count; }

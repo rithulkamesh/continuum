@@ -24,6 +24,12 @@ struct MemoryNode {
   std::int64_t created_ns = 0;
 };
 
+/// Memory-graph recall tier: an append-only log of prompt / completion nodes
+/// retrieved by embedding similarity.
+///
+/// Eviction: first-in-first-out by insertion order. Recall is a scan, so a
+/// read does not refresh a node; when `size()` reaches `max_nodes` the oldest
+/// node is dropped before the new one is added.
 class MemoryGraphStore {
  public:
   explicit MemoryGraphStore(std::size_t max_nodes = 8192);
@@ -44,6 +50,10 @@ class MemoryGraphStore {
 
   void clear();
   std::size_t size() const;
+  /// Capacity in nodes passed at construction.
+  std::size_t max_nodes() const { return max_nodes_; }
+  /// Approximate resident bytes: content, embeddings, ids, and per-node overhead.
+  std::size_t estimated_bytes() const;
 
  private:
   mutable std::mutex mu_;
