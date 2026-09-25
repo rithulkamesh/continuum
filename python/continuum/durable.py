@@ -13,12 +13,21 @@ from typing import Any
 
 from continuum._native import DurableAgent as _NativeDurableAgent
 from continuum.checkpoints import CheckpointStore
+from continuum.telemetry import auto_instrument
 
 __all__ = ["DurableAgent"]
 
 
 class DurableAgent(_NativeDurableAgent):
-    """Step-sequenced agent run that can be checkpointed, resumed, and forked."""
+    """Step-sequenced agent run that can be checkpointed, resumed, and forked.
+
+    With ``CONTINUUM_OTEL=1`` in the environment, each agent exports its
+    reuse events through OpenTelemetry (see :mod:`continuum.telemetry`).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        auto_instrument(self)
 
     def run_until_step(
         self, step_index: int, store: CheckpointStore | None = None, key: str | None = None

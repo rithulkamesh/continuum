@@ -179,6 +179,7 @@ std::vector<continuum::Value> Session::run(
   interp.set_layer_cache(layer_cache_);
   interp.set_memory_graph(memory_graph_);
   interp.set_cache_namespace(cache_namespace_);
+  interp.set_observer(observer_);
   results = interp.run(g, inputs);
   metrics_.run_count++;
 

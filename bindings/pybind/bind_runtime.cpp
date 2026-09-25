@@ -505,6 +505,14 @@ class PyEmbeddingProvider : public continuum::runtime::EmbeddingProvider {
   }
 };
 
+// Python subclasses of ReuseObserver receive the interpreter's trace events.
+class PyReuseObserver : public continuum::runtime::ReuseObserver {
+ public:
+  void on_event(const continuum::runtime::ReuseEvent& event) override {
+    PYBIND11_OVERRIDE_PURE(void, continuum::runtime::ReuseObserver, on_event, event);
+  }
+};
+
 // Model id DurableAgent uses when VLLM_BASE_URL points at a live server.
 constexpr const char* kDurableVllmModel = "vllm/gemma4";
 
@@ -810,6 +818,38 @@ void bind_runtime(py::module_& m) {
       .value("ThresholdPrefixLen", continuum::runtime::ReusePolicyKind::ThresholdPrefixLen)
       .export_values();
 
+  py::enum_<continuum::runtime::ReuseEventKind>(m, "ReuseEventKind")
+      .value("TierLookup", continuum::runtime::ReuseEventKind::TierLookup)
+      .value("NodeExecution", continuum::runtime::ReuseEventKind::NodeExecution);
+
+  {
+    using E = continuum::runtime::ReuseEvent;
+    py::class_<E>(m, "ReuseEvent")
+        .def_readonly("kind", &E::kind)
+        .def_readonly("tier", &E::tier)
+        .def_readonly("node_name", &E::node_name)
+        .def_readonly("node_kind", &E::node_kind)
+        .def_readonly("backend", &E::backend)
+        .def_readonly("model_id", &E::model_id)
+        .def_readonly("cache_namespace", &E::cache_namespace)
+        .def_readonly("hit", &E::hit)
+        .def_readonly("served_by", &E::served_by)
+        .def_readonly("similarity", &E::similarity)
+        .def_readonly("match_len", &E::match_len)
+        .def_readonly("total_tokens", &E::total_tokens)
+        .def_readonly("tokens_saved", &E::tokens_saved)
+        .def_readonly("tokens_sent", &E::tokens_sent)
+        .def_readonly("reused_prefix_len", &E::reused_prefix_len)
+        .def_readonly("compute_steps", &E::compute_steps)
+        .def_readonly("used_cached_state", &E::used_cached_state)
+        .def_readonly("start_unix_ns", &E::start_unix_ns)
+        .def_readonly("end_unix_ns", &E::end_unix_ns);
+  }
+
+  py::class_<continuum::runtime::ReuseObserver, PyReuseObserver>(m, "ReuseObserver")
+      .def(py::init<>())
+      .def("on_event", &continuum::runtime::ReuseObserver::on_event, py::arg("event"));
+
   py::class_<continuum::runtime::ReusePolicy>(m, "ReusePolicy")
       .def(py::init<>())
       .def_static("always", &continuum::runtime::ReusePolicy::always)
@@ -897,6 +937,10 @@ void bind_runtime(py::module_& m) {
            py::arg("prompt_parts"), py::arg("model_id"), py::arg("max_tokens") = 128,
            py::arg("temperature") = 0.0f, py::arg("op_name") = "generate")
       .def("cache_size", [](const continuum::runtime::Session& self) { return self.cache().size(); })
+      .def("set_observer", [](continuum::runtime::Session& self, py::object obs) {
+             self.set_observer(obs.is_none() ? nullptr : obs.cast<continuum::runtime::ReuseObserver*>());
+           }, py::arg("observer"), py::keep_alive<1, 2>(),
+           "Send tier-lookup and node-execution ReuseEvents to `observer` (None disables).")
       .def("cache_stats", [](const continuum::runtime::Session& self) {
              py::dict out;
              for (const auto& s : self.cache_stats()) {
@@ -1033,6 +1077,10 @@ void bind_runtime(py::module_& m) {
       .def("run_until_step", &PyDurableAgent::run_until_step, py::arg("step_index"))
       .def("resume_from", &PyDurableAgent::resume_from, py::arg("checkpoint"))
       .def("step_outputs", &PyDurableAgent::step_outputs)
+      .def("set_observer", [](PyDurableAgent& self, py::object obs) {
+             self.interp.set_observer(obs.is_none() ? nullptr : obs.cast<continuum::runtime::ReuseObserver*>());
+           }, py::arg("observer"), py::keep_alive<1, 2>(),
+           "Send tier-lookup and node-execution ReuseEvents to `observer` (None disables).")
       .def("cache_size", [](const PyDurableAgent& self) { return self.cache.size(); })
       .def_readonly("prompt_node_ids", &PyDurableAgent::prompt_ids)
       .def_readonly("step_node_ids", &PyDurableAgent::step_ids)

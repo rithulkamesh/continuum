@@ -321,3 +321,49 @@ TEST(CheckpointDeltaTest, RoundTripsValuesAndCache) {
   EXPECT_THROW(continuum::runtime::apply_checkpoint_delta(base, truncated), std::runtime_error);
   EXPECT_FALSE(continuum::runtime::is_checkpoint_delta(continuum::runtime::serialize_checkpoint(base)));
 }
+
+namespace {
+class CountingObserver : public continuum::runtime::ReuseObserver {
+ public:
+  void on_event(const continuum::runtime::ReuseEvent& e) override { events.push_back(e); }
+  std::vector<continuum::runtime::ReuseEvent> events;
+};
+}  // namespace
+
+TEST(ObserverTest, EmitsTierAndNodeEvents) {
+  continuum::backend::BackendRegistry registry;
+  registry.register_backend("fake", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+  continuum::runtime::Session session("obs", registry);
+  continuum::runtime::MemoTable memo(8, 0);
+  session.set_memo_table(&memo);
+  CountingObserver obs;
+  session.set_observer(&obs);
+
+  Graph g;
+  Node p;
+  p.kind = NodeKind::PromptOp;
+  const NodeId pid = g.add_node(p);
+  Node t;
+  t.kind = NodeKind::TokenOp;
+  t.payload = continuum::ir::TokenOpPayload{"generate", "m", 0.0f, 4};
+  t.inputs.push_back(pid);
+  g.add_node(t);
+  std::unordered_map<NodeId, continuum::Value> inputs{{pid, std::string{"hi"}}};
+
+  session.run(g, inputs);
+  session.run(g, inputs);
+  ASSERT_EQ(obs.events.size(), 5u);  // run 1: memo, prefix_kv, node; run 2: memo hit, node
+  EXPECT_EQ(obs.events[0].tier, "memo");
+  EXPECT_FALSE(obs.events[0].hit);
+  EXPECT_EQ(obs.events[1].tier, "prefix_kv");
+  EXPECT_EQ(obs.events[2].kind, continuum::runtime::ReuseEventKind::NodeExecution);
+  EXPECT_EQ(obs.events[2].served_by, "backend");
+  EXPECT_EQ(obs.events[2].backend, "fake");
+  EXPECT_TRUE(obs.events[3].hit);
+  EXPECT_EQ(obs.events[4].served_by, "memo");
+  EXPECT_GE(obs.events[4].end_unix_ns, obs.events[4].start_unix_ns);
+
+  session.set_observer(nullptr);
+  session.run(g, inputs);
+  EXPECT_EQ(obs.events.size(), 5u);
+}

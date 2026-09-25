@@ -8,6 +8,7 @@
 #include <continuum/runtime/semantic_cache.hpp>
 #include <continuum/runtime/layer_cache.hpp>
 #include <continuum/runtime/memory_graph.hpp>
+#include <continuum/runtime/observer.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -40,6 +41,10 @@ class Interpreter {
   void set_layer_cache(LayerKVCacheIndex* lc) { layer_cache_ = lc; }
   void set_memory_graph(MemoryGraphStore* mg) { memory_graph_ = mg; }
   void set_cache_namespace(std::string ns) { cache_namespace_ = std::move(ns); }
+  /// Receive a ReuseEvent per tier lookup and per executed node; nullptr
+  /// (the default) turns emission off entirely.
+  void set_observer(ReuseObserver* observer) { observer_ = observer; }
+  ReuseObserver* observer() const { return observer_; }
   const std::string& cache_namespace() const { return cache_namespace_; }
 
   MemoTable* memo_table() const { return memo_table_; }
@@ -60,6 +65,10 @@ class Interpreter {
   };
 
   std::vector<continuum::Value> run_to_end();
+  continuum::Value step_impl(const ir::Node& n, const std::vector<continuum::Value>& input_values);
+  /// Emit a TierLookup event for the node being stepped (no-op without an observer).
+  void emit_tier(const std::string& tier, std::int64_t start_ns, bool hit, std::int32_t tokens_saved = 0,
+                 std::int32_t match_len = 0, float similarity = 0.0f);
   ir::NodeId next_planned_node(const ActiveExecution& state) const;
   void advance_plan_cursor(ActiveExecution& state);
 
@@ -74,6 +83,8 @@ class Interpreter {
   LayerKVCacheIndex* layer_cache_ = nullptr;
   MemoryGraphStore* memory_graph_ = nullptr;
   std::string cache_namespace_;
+  ReuseObserver* observer_ = nullptr;
+  ReuseEvent node_trace_;  // filled by step_impl, emitted by step
 };
 
 }  // namespace continuum::runtime

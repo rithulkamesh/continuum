@@ -55,6 +55,9 @@ ReusePolicy = _rt.ReusePolicy
 ReusePolicyKind = _rt.ReusePolicyKind
 ReuseMetrics = _rt.ReuseMetrics
 ReuseStepRecord = _rt.ReuseStepRecord
+ReuseEvent = _rt.ReuseEvent
+ReuseEventKind = _rt.ReuseEventKind
+ReuseObserver = _rt.ReuseObserver
 MemoTable = _rt.MemoTable
 MemoKey = _rt.MemoKey
 SemanticCacheIndex = _rt.SemanticCacheIndex
@@ -98,6 +101,9 @@ __all__ = [
     "ReusePolicyKind",
     "ReuseMetrics",
     "ReuseStepRecord",
+    "ReuseEvent",
+    "ReuseEventKind",
+    "ReuseObserver",
     "MemoTable",
     "MemoKey",
     "SemanticCacheIndex",

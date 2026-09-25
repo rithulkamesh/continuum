@@ -36,6 +36,10 @@ Frontend
    :members:
    :show-inheritance:
 
+.. automodule:: continuum.telemetry
+   :members: OpenTelemetryObserver, CallbackObserver, instrument, auto_instrument, enabled_from_env
+   :show-inheritance:
+
 .. automodule:: continuum.embeddings
    :members: CallableEmbeddingProvider, OpenAICompatibleEmbeddingProvider, PrecomputedEmbeddingProvider
    :show-inheritance:

@@ -112,6 +112,10 @@ class Session {
   void set_memory_graph(MemoryGraphStore* mg) { memory_graph_ = mg; }
   void set_cache_namespace(std::string ns) { cache_namespace_ = std::move(ns); }
   const std::string& cache_namespace() const { return cache_namespace_; }
+  /// Forward every tier-lookup and node-execution ReuseEvent to \p observer
+  /// (nullptr, the default, disables emission).
+  void set_observer(ReuseObserver* observer) { observer_ = observer; }
+  ReuseObserver* observer() const { return observer_; }
 
   const ReuseMetrics& metrics() const { return metrics_; }
   void reset_metrics() { metrics_.reset(); }
@@ -144,6 +148,7 @@ class Session {
   LayerKVCacheIndex* layer_cache_ = nullptr;
   MemoryGraphStore* memory_graph_ = nullptr;
   std::string cache_namespace_;
+  ReuseObserver* observer_ = nullptr;
 };
 
 }  // namespace continuum::runtime
