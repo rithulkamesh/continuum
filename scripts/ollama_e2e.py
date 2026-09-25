@@ -16,6 +16,8 @@ Exercises the paths that talk to an OpenAI-compatible model server:
     ollama pull smollm2:135m && ollama pull all-minilm
     PYTHONPATH=python python scripts/ollama_e2e.py --model smollm2:135m --embed-model all-minilm
 
+Thinking models need ``--max-tokens 512`` or the durable steps come back empty.
+
 Exits non-zero if any check fails; ``--json`` writes a summary.
 """
 
@@ -113,7 +115,7 @@ class _Recorder:
 
 
 @check("durable agent on ollama: text, replay, fork cascade")
-def durable_agent(base: str, model: str) -> dict[str, Any]:
+def durable_agent(base: str, model: str, max_tokens: int) -> dict[str, Any]:
     rec_server = _Recorder(base)
     os.environ["VLLM_BASE_URL"] = rec_server.url
     try:
@@ -127,7 +129,7 @@ def durable_agent(base: str, model: str) -> dict[str, Any]:
         ]
         rec = DurableAgent()
         assert rec.backend == "vllm", rec.backend
-        rec.begin(prompts, model_id=f"vllm/{model}", max_tokens=24)
+        rec.begin(prompts, model_id=f"vllm/{model}", max_tokens=max_tokens)
         ckpt = rec.run_until_step(0)
         assert len(rec_server.requests) == 1
 
@@ -272,13 +274,20 @@ def main() -> int:
     )
     ap.add_argument("--model", default="smollm2:135m")
     ap.add_argument("--embed-model", default="all-minilm")
+    ap.add_argument(
+        "--max-tokens",
+        type=int,
+        default=24,
+        help="per-step budget for the durable agent; thinking models (e.g. gemma4) "
+        "spend it on hidden reasoning, so give them ~512",
+    )
     ap.add_argument("--json", help="write a JSON summary here")
     args = ap.parse_args()
     base = args.base_url.rstrip("/").removesuffix("/v1")
     models = wait_for_server(base)
     print(f"ollama at {base}; models: {models}", flush=True)
 
-    durable_agent(base, args.model)
+    durable_agent(base, args.model, args.max_tokens)
     proxy(base, args.model)
     semantic(base, args.model, args.embed_model)
     prefix(base, args.model)
