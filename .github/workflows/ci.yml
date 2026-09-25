@@ -161,3 +161,41 @@ jobs:
       - run: pip install sphinx furo breathe
       - run: sphinx-build -b html docs/api/python docs/api/python/_build
       - run: doxygen docs/Doxyfile
+
+  ollama-e2e:
+    # Real Ollama on the runner: DurableAgent, the proxy (via the openai SDK),
+    # the semantic tier on Ollama embeddings, and prefix reuse. Small models
+    # keep it CPU-friendly.
+    runs-on: ubuntu-latest
+    env:
+      OLLAMA_CHAT_MODEL: smollm2:135m
+      OLLAMA_EMBED_MODEL: all-minilm
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e ".[test]"
+      - name: Install and start Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          (ollama serve > /tmp/ollama.log 2>&1 &) || true
+          for i in $(seq 1 30); do curl -sf http://localhost:11434/api/tags && break; sleep 1; done
+          ollama pull "$OLLAMA_CHAT_MODEL"
+          ollama pull "$OLLAMA_EMBED_MODEL"
+          ollama list
+      - name: End-to-end checks against Ollama
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: >
+          python scripts/ollama_e2e.py --model "$OLLAMA_CHAT_MODEL"
+          --embed-model "$OLLAMA_EMBED_MODEL" --json ollama-e2e.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ollama-e2e
+          path: ollama-e2e.json
