@@ -117,3 +117,34 @@ def test_vllm_fork_changes_every_later_step(server: _Stub) -> None:
     assert a[1] != b[1] and a[2] != b[2]
     assert "rewrite in rust" in b[1]
     assert {r["model"] for r in server.requests} == {"custom"}
+
+
+def test_prefix_state_survives_checkpoint_and_rewarms(
+    server: _Stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KV prefix state is exported into the checkpoint, re-imported on resume,
+    and (opt-in) the server is re-warmed with a 1-token request per prefix."""
+    from continuum.telemetry import CallbackObserver
+
+    monkeypatch.setenv("VLLM_REWARM_ON_IMPORT", "1")
+    recorder = DurableAgent()
+    recorder.begin(PROMPTS)
+    checkpoint = recorder.run_until_step(0)
+    assert len(server.requests) == 1
+
+    info = DurableAgent.inspect(checkpoint)
+    assert info["checkpoint_bytes"] > 0
+
+    revived = DurableAgent()
+    events: list[dict] = []
+    revived.set_observer(CallbackObserver(events.append))
+    revived.resume_from(checkpoint)
+    assert revived.cache_size() > 0
+
+    rewarm = [r for r in server.requests[1:] if r["max_tokens"] == 1]
+    assert len(rewarm) >= 1
+    assert all(PROMPTS[0].split()[0] in r["prompt"] for r in rewarm)
+    token_nodes = [e for e in events if e["kind"] == "node_execution" and e["node_kind"] == "TokenOp"]
+    assert len(token_nodes) == 2
+    # The stub reports 4 cached prompt tokens; the backend surfaces them.
+    assert all(e["tokens_saved"] == 4 and e["used_cached_state"] for e in token_nodes)

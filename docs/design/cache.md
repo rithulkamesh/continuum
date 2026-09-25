@@ -30,7 +30,13 @@ Correctness requires both to align. If backend state was derived from a differen
 ## Azure vs vLLM
 
 - Azure path currently approximates prefix savings by sending suffix-only requests on cache hit and tracking `tokens_sent`/`tokens_saved`.
-- vLLM path is designed for real KV reuse semantics: the same runtime prefix hit mechanism forwards backend state, and vLLM can avoid recomputing the shared prefix work.
+- vLLM path (also Ollama and any `/v1/completions` server when `VLLM_BASE_URL`
+  is set) always sends the full prompt. The server's own prefix cache (vLLM
+  automatic prefix caching) skips recomputing the shared prefix, and its
+  `cached_tokens` is reported as `tokens_saved`. The backend state handle
+  records which prefix the server holds warm. It is portable, so it survives a
+  checkpoint / resume, and `VLLM_REWARM_ON_IMPORT=1` re-warms the server after
+  a restart. See `benchmarks/reports/vllm-prefix-reuse.md`.
 
 Both paths emit the same runtime metrics so benchmark comparisons stay backend-agnostic.
 
