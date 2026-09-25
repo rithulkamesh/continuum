@@ -1,5 +1,6 @@
 #include <continuum/backend/fake_llm.hpp>
 #include <continuum/backend/libtorch.hpp>
+#include <continuum/backend/vllm_shim.hpp>
 #include <continuum/ir/graph.hpp>
 #include <continuum/ir/node.hpp>
 #include <continuum/runtime/checkpoint.hpp>
@@ -270,4 +271,16 @@ TEST(EvictionTest, SessionReportsTierStats) {
   EXPECT_EQ(stats[0].capacity, 4u);
   EXPECT_EQ(stats[1].tier, "memo");
   EXPECT_EQ(stats[1].capacity, 3u);
+}
+
+TEST(VllmShimTest, ExtractJsonStringDecodesEscapes) {
+  using continuum::backend::VllmShimBackend;
+  const std::string body =
+      R"({"choices":[{"index":0,"text":"a\nb \"q\" \\ ✓ 😀 \/"}],)"
+      R"("usage":{"prompt_tokens_details":{"cached_tokens": 42}}})";
+  EXPECT_EQ(VllmShimBackend::ExtractJsonString(body, "text"),
+            "a\nb \"q\" \\ \xE2\x9C\x93 \xF0\x9F\x98\x80 /");
+  EXPECT_EQ(VllmShimBackend::ExtractJsonInt(body, "cached_tokens"), 42);
+  EXPECT_EQ(VllmShimBackend::ExtractJsonString(body, "missing"), "");
+  EXPECT_EQ(VllmShimBackend::ExtractJsonInt(body, "missing"), 0);
 }

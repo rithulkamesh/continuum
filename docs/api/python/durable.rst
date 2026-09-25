@@ -85,8 +85,9 @@ Fork a timeline
 :meth:`DurableAgent.fork <continuum._native.DurableAgent.fork>` takes a
 checkpoint, the node id of a value to replace, and the replacement, and returns
 a new checkpoint. Completed steps replay from the checkpoint and are never
-recomputed; only the edited node and its downstream generation diverge. This is
-``rr`` for agents.
+recomputed. Each step's generation sees its own prompt plus the previous step's
+output, so an edit changes that step and every step after it. This is ``rr``
+for agents.
 
 .. code-block:: python
 
@@ -95,13 +96,36 @@ recomputed; only the edited node and its downstream generation diverge. This is
    rec = DurableAgent()
    rec.begin(["summarize the bug", "find the module", "draft a fix", "write the changelog"])
    ckpt = rec.run_until_step(1)               # steps 1 and 2 executed
-   step_4 = rec.prompt_node_ids[3]            # the step-4 prompt, still pending
+   step_3 = rec.prompt_node_ids[2]            # the step-3 prompt, still pending
 
-   real    = DurableAgent().resume_from(ckpt)
-   what_if = DurableAgent().resume_from(
-       DurableAgent.fork(ckpt, step_4, "write a haiku instead"),
-   )
-   # steps 1 to 3 replay bit for bit; only step 4 and its output differ
+   real, what_if = DurableAgent(), DurableAgent()
+   real.resume_from(ckpt)
+   what_if.resume_from(DurableAgent.fork(ckpt, step_3, "write a haiku instead"))
+   real.step_outputs()      # one generated output per step, in step order
+   what_if.step_outputs()   # steps 1-2 identical; steps 3 and 4 differ
 
 ``prompt_node_ids`` and ``step_node_ids`` expose the node ids for each step, so
 you can target the prompt or the generation of any step by index.
+``step_outputs()`` returns each step's generated output (``None`` for a step
+that has not run).
+
+Running on a real model (vLLM, Ollama)
+--------------------------------------
+
+By default ``DurableAgent`` runs on the deterministic fake backend and step
+outputs are token ids. Set ``VLLM_BASE_URL`` to any server that speaks the
+OpenAI ``/v1/completions`` format and the agent sends every step there instead,
+and ``step_outputs()`` returns the generated text:
+
+.. code-block:: bash
+
+   ollama pull gemma4                    # or: vllm serve <model> --served-model-name gemma4
+   export VLLM_BASE_URL=http://localhost:11434
+   PYTHONPATH=python python examples/03_time_travel_fork.py
+
+The model id defaults to ``vllm/gemma4``; the ``vllm/`` prefix is stripped, so
+the server is asked for ``gemma4``. Pass ``begin(prompts, model_id="vllm/<name>")``
+to pick another model. ``agent.backend`` reports ``"vllm"`` or ``"fake"``.
+Each request carries the full prompt (the step's prompt, then the previous
+step's output); prefix reuse happens server side and ``cached_tokens`` from the
+response is reported as ``tokens_saved``.

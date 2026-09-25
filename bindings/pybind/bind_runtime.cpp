@@ -20,6 +20,7 @@
 #include <torch/torch.h>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -489,10 +490,21 @@ py::object ValueToPy(const continuum::Value& v) {
   if (const auto* i = std::get_if<int64_t>(&v)) return py::int_(*i);
   return py::none();
 }
+// Model id DurableAgent uses when VLLM_BASE_URL points at a live server.
+constexpr const char* kDurableVllmModel = "vllm/gemma4";
+
+bool VllmServerConfigured() {
+  const char* base = std::getenv("VLLM_BASE_URL");
+  return base != nullptr && *base != '\0';
+}
+
 // Durable agent runner: a linear multi-step TokenOp workflow whose execution
 // can be checkpointed to bytes mid-run, resumed in a fresh process, or forked
-// by editing a value before resuming (time-travel). Backed by FakeLLM so
-// examples are deterministic and CI-checkable.
+// by editing a value before resuming (time-travel). Each step sees its own
+// prompt plus the previous step's output, so editing one step changes every
+// step after it. Backed by FakeLLM (deterministic, CI-checkable) unless
+// VLLM_BASE_URL is set, in which case steps run on that OpenAI-compatible
+// server (vLLM, Ollama, ...) as model `vllm/gemma4` by default.
 struct PyDurableAgent {
   continuum::backend::BackendRegistry registry;
   continuum::runtime::KVCacheIndex cache{4096};
@@ -503,14 +515,23 @@ struct PyDurableAgent {
   std::vector<continuum::ir::NodeId> prompt_ids;
   std::vector<continuum::ir::NodeId> step_ids;
 
+  std::string backend_name = "fake";
+
   PyDurableAgent() : interp(registry, cache) {
     registry.register_backend(
         "default", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+    if (VllmServerConfigured()) {
+      registry.register_backend(
+          "vllm", std::make_shared<continuum::backend::VllmShimBackend>(), 100);
+      backend_name = "vllm";
+    }
     interp.set_memo_table(&memo);
   }
 
   std::size_t begin(const std::vector<std::string>& prompts,
-                    const std::string& model_id, std::int32_t max_tokens) {
+                    const std::optional<std::string>& model_id_arg, std::int32_t max_tokens) {
+    const std::string model_id =
+        model_id_arg.value_or(backend_name == "vllm" ? kDurableVllmModel : "fake/model");
     graph = continuum::ir::Graph{};
     inputs.clear();
     prompt_ids.clear();
@@ -528,6 +549,9 @@ struct PyDurableAgent {
       t.payload = continuum::ir::TokenOpPayload{"generate", model_id, 0.0f, max_tokens};
       t.debug_name = "step" + std::to_string(i + 1) + "_generate";
       t.inputs.push_back(pid);
+      if (!step_ids.empty()) {
+        t.inputs.push_back(step_ids.back());  // chain: step i sees step i-1's output
+      }
       step_ids.push_back(graph.add_node(t));
     }
     interp.begin(graph, inputs);
@@ -538,8 +562,13 @@ struct PyDurableAgent {
     if (step_index >= step_ids.size()) {
       throw std::runtime_error("run_until_step: step index out of range");
     }
-    auto cp = interp.run_until(step_ids[step_index]);
-    auto bytes = continuum::runtime::serialize_checkpoint(cp);
+    std::vector<std::uint8_t> bytes;
+    {
+      // Backends may block on the network; let other Python threads run.
+      py::gil_scoped_release release;
+      auto cp = interp.run_until(step_ids[step_index]);
+      bytes = continuum::runtime::serialize_checkpoint(cp);
+    }
     return py::bytes(reinterpret_cast<const char*>(bytes.data()), bytes.size());
   }
 
@@ -547,9 +576,36 @@ struct PyDurableAgent {
     const std::string raw = blob;
     std::vector<std::uint8_t> bytes(raw.begin(), raw.end());
     auto cp = continuum::runtime::deserialize_checkpoint(bytes);
-    auto out = interp.resume(cp);
+    // Rebuild step bookkeeping from the checkpoint's graph so a fresh agent
+    // can report per-step outputs after resuming.
+    graph = continuum::ir::Graph::deserialize(cp.serialized_graph.data(), cp.serialized_graph.size());
+    prompt_ids.clear();
+    step_ids.clear();
+    for (const auto id : graph.topo_order()) {
+      const auto kind = graph.get(id).kind;
+      if (kind == continuum::ir::NodeKind::PromptOp) prompt_ids.push_back(id);
+      if (kind == continuum::ir::NodeKind::TokenOp) step_ids.push_back(id);
+    }
+    std::sort(prompt_ids.begin(), prompt_ids.end());
+    std::sort(step_ids.begin(), step_ids.end());
+    std::vector<continuum::Value> out;
+    {
+      py::gil_scoped_release release;
+      out = interp.resume(cp);
+    }
     py::list result;
     for (const auto& v : out) result.append(ValueToPy(v));
+    return result;
+  }
+
+  // Generated output of each step, in step order; None for steps not yet run.
+  py::list step_outputs() const {
+    const auto& values = interp.active_values();
+    py::list result;
+    for (const auto id : step_ids) {
+      auto it = values.find(id);
+      result.append(it == values.end() ? py::none() : ValueToPy(it->second));
+    }
     return result;
   }
 
@@ -905,9 +961,11 @@ void bind_runtime(py::module_& m) {
   py::class_<PyDurableAgent>(m, "DurableAgent")
       .def(py::init<>())
       .def("begin", &PyDurableAgent::begin, py::arg("prompts"),
-           py::arg("model_id") = "fake/model", py::arg("max_tokens") = 32)
+           py::arg("model_id") = py::none(), py::arg("max_tokens") = 32)
+      .def_readonly("backend", &PyDurableAgent::backend_name)
       .def("run_until_step", &PyDurableAgent::run_until_step, py::arg("step_index"))
       .def("resume_from", &PyDurableAgent::resume_from, py::arg("checkpoint"))
+      .def("step_outputs", &PyDurableAgent::step_outputs)
       .def("cache_size", [](const PyDurableAgent& self) { return self.cache.size(); })
       .def_readonly("prompt_node_ids", &PyDurableAgent::prompt_ids)
       .def_readonly("step_node_ids", &PyDurableAgent::step_ids)

@@ -9,22 +9,20 @@
 namespace continuum::backend {
 namespace {
 
+// Every string / token input contributes, in order, so a node fed by several
+// upstream values (e.g. a prompt plus the previous step's output) produces an
+// output that depends on all of them. A single input maps exactly as before.
 std::vector<std::int32_t> ExtractPromptTokens(const std::vector<continuum::Value>& inputs) {
-  std::string prompt;
-  if (!inputs.empty()) {
-    if (const auto* s = std::get_if<std::string>(&inputs[0])) {
-      prompt = *s;
-    } else if (const auto* t = std::get_if<continuum::TokensValue>(&inputs[0])) {
-      std::vector<std::int32_t> out;
-      out.reserve(t->ids.size());
+  std::vector<std::int32_t> out;
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
+    if (i != 0 && !out.empty()) out.push_back('\n');
+    if (const auto* s = std::get_if<std::string>(&inputs[i])) {
+      for (unsigned char c : *s) out.push_back(static_cast<std::int32_t>(c));
+    } else if (const auto* t = std::get_if<continuum::TokensValue>(&inputs[i])) {
       for (int id : t->ids) out.push_back(id);
-      return out;
     }
   }
-  if (prompt.empty()) prompt = " ";
-  std::vector<std::int32_t> out;
-  out.reserve(prompt.size());
-  for (unsigned char c : prompt) out.push_back(static_cast<std::int32_t>(c));
+  if (out.empty()) out.push_back(' ');
   return out;
 }
 

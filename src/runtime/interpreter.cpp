@@ -301,6 +301,11 @@ std::vector<continuum::Value> Interpreter::resume(const Checkpoint& checkpoint) 
   return run_to_end();
 }
 
+const std::unordered_map<ir::NodeId, continuum::Value>& Interpreter::active_values() const {
+  static const std::unordered_map<ir::NodeId, continuum::Value> kEmpty;
+  return active_.has_value() ? active_->values : kEmpty;
+}
+
 std::vector<continuum::Value> Interpreter::run_to_end() {
   if (!active_.has_value()) {
     throw std::runtime_error("interpreter run_to_end: no active graph");

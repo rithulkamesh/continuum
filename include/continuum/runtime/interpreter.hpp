@@ -30,6 +30,9 @@ class Interpreter {
   std::vector<continuum::Value> resume(const Checkpoint& checkpoint);
   void begin(const ir::Graph& g, const std::unordered_map<ir::NodeId, continuum::Value>& inputs);
   continuum::Value step(const ir::Node& n, const std::vector<continuum::Value>& input_values);
+  /// Values computed so far by the active begin / run_until / resume
+  /// execution, keyed by node id. Empty when nothing is active.
+  const std::unordered_map<ir::NodeId, continuum::Value>& active_values() const;
 
   void set_memo_table(MemoTable* memo) { memo_table_ = memo; }
   void set_semantic_cache(SemanticCacheIndex* sc) { semantic_cache_ = sc; }
