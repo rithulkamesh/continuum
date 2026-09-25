@@ -1,0 +1,71 @@
+{
+  "experiment": "E8: memory-graph recall in isolation",
+  "embedder": "continuum/char-ngram-v1:64",
+  "top_k": 3,
+  "quality": [
+    {
+      "threshold": 0.5,
+      "fired": 8,
+      "queries": 8,
+      "precision_at_k": 0.583,
+      "recall_at_k": 0.583
+    },
+    {
+      "threshold": 0.6,
+      "fired": 8,
+      "queries": 8,
+      "precision_at_k": 0.583,
+      "recall_at_k": 0.583
+    },
+    {
+      "threshold": 0.7,
+      "fired": 8,
+      "queries": 8,
+      "precision_at_k": 0.583,
+      "recall_at_k": 0.583
+    },
+    {
+      "threshold": 0.8,
+      "fired": 8,
+      "queries": 8,
+      "precision_at_k": 0.583,
+      "recall_at_k": 0.583
+    },
+    {
+      "threshold": 0.9,
+      "fired": 8,
+      "queries": 8,
+      "precision_at_k": 0.833,
+      "recall_at_k": 0.417
+    }
+  ],
+  "separation": {
+    "mean_best_relevant_similarity": 0.944,
+    "mean_best_irrelevant_similarity": 0.89,
+    "queries_where_top1_is_relevant": 8,
+    "queries": 8
+  },
+  "cost": [
+    {
+      "nodes": 128,
+      "p50_us": 45.4,
+      "p95_us": 99.9,
+      "bytes": 52890,
+      "bytes_per_node": 413.2
+    },
+    {
+      "nodes": 1024,
+      "p50_us": 352.9,
+      "p95_us": 498.1,
+      "bytes": 423974,
+      "bytes_per_node": 414.0
+    },
+    {
+      "nodes": 8192,
+      "p50_us": 3398.1,
+      "p95_us": 4090.2,
+      "bytes": 3399610,
+      "bytes_per_node": 415.0
+    }
+  ]
+}

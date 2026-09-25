@@ -88,6 +88,43 @@ the dataset once and replay it through `PrecomputedEmbeddingProvider`.
 and the threshold; `benchmarks/reports/semantic-false-hits.md` measures that
 trade-off.
 
+## Memory-graph recall tier
+
+`MemoryGraphStore` is a log of earlier prompts that the runtime searches for
+related context before each generation.
+
+**What it stores.** After a `TokenOp` runs on the backend, the interpreter adds
+one `MemoryNode` holding the concatenated string inputs (`content`), their
+embedding from the session's `EmbeddingProvider`, the node type (`Prompt`),
+and the session's cache namespace. Nodes get monotonically increasing ids.
+Nothing is stored when the step was served by the memo or semantic tier, when
+the step has no string inputs, or when no embedder is attached.
+
+**How recall triggers.** On every `TokenOp` with both a memory graph and an
+embedder attached, before calling the backend, the interpreter embeds the
+prompt and calls `retrieve_similar(query, max_results=5, min_similarity=0.7,
+namespace)`: a linear scan returning up to five nodes from the same namespace
+with cosine similarity >= 0.7, best first.
+
+**What recall does with the result.** Today, it logs it
+(`memory_recall ... related=N top_sim=...`). Recalled nodes are *not* added to
+the request, so the tier saves no tokens yet; it is an observable signal and
+the hook where context injection would go. Isolated measurements of recall
+quality and cost are in `benchmarks/reports/memory-graph-recall.md`: with the
+bundled n-gram embedder the top-1 hit is on topic, but the 0.7 cutoff filters
+almost nothing, so a semantic embedder is a prerequisite for injecting
+recalled context.
+
+**Invalidation.**
+
+- Namespace: recall never crosses cache namespaces.
+- Capacity: FIFO eviction by insertion (see below). Reads never refresh a node.
+- `clear()` drops every node and resets ids.
+- There is no model- or version-based invalidation: nodes are prompts, not
+  model outputs, so they stay valid when the model changes. Changing the
+  embedder *does* matter: vectors from different embedders are not
+  comparable, so clear the store when you switch embedders.
+
 ## Eviction and memory bounds
 
 Every tier is bounded. Capacities are set at construction; a capacity of `0`

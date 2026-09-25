@@ -14,6 +14,7 @@ one reuse mechanism enabled at a time. Runner scripts live in
 | Mixed 20-step agent workflow | prefix + repeats + paraphrases + cold queries | 92.5% token reduction, 4/20 backend calls eliminated |
 | Cross-session cold start | persist cache metadata, restart, reload | >=80% hit rate on first warm run |
 | No-reuse worst case | 4 unrelated queries | ~0.5% overhead, no errors |
+| Memory-graph recall (isolated, offline) | 12-turn labeled log, 8 follow-ups; 128 to 8,192 nodes | top-1 on-topic 8/8, precision@3 0.58 at the 0.7 default; 3.4 ms p50 lookup at 8,192 nodes ([report](../benchmarks/reports/memory-graph-recall.md)) |
 
 ![Continuum benchmark dashboard](../benchmarks/plots/summary_dashboard.png)
 
