@@ -56,6 +56,7 @@ endif()
 add_library(continuum_core
     src/backend/backend.cpp
     src/backend/backend_abi_adapter.cpp
+    src/backend/conformance.cpp
     src/ir/node.cpp
     src/ir/graph.cpp
     src/ir/type.cpp
@@ -82,6 +83,8 @@ add_library(continuum_core
     src/backend/vllm_shim.cpp
 )
 target_include_directories(continuum_core PUBLIC include)
+# dlopen for runtime backend plugins (LoadBackendPlugin).
+target_link_libraries(continuum_core PUBLIC ${CMAKE_DL_LIBS})
 if(CONTINUUM_USE_LIBTORCH)
     target_link_libraries(continuum_core PUBLIC ${TORCH_LIBRARIES})
 endif()

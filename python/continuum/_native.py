@@ -36,6 +36,7 @@ Graph = _ir.Graph
 
 # --- Backends -----------------------------------------------------------
 BackendRegistry = _backend.BackendRegistry
+check_backend = _backend.check_backend
 
 # --- Runtime core -----------------------------------------------------
 GraphBuilder = _rt.GraphBuilder
@@ -79,6 +80,7 @@ __all__ = [
     "Node",
     "Graph",
     "BackendRegistry",
+    "check_backend",
     "GraphBuilder",
     "Interpreter",
     "DurableAgent",
