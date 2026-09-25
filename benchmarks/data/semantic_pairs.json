@@ -1,0 +1,381 @@
+{
+ "description": "Labeled prompt pairs for semantic-cache false-hit evaluation. paraphrase: serving a's cached answer for b is correct. near_miss: lexically close but needs a different answer (a hit is a false hit). unrelated: different topic.",
+ "version": 1,
+ "pairs": [
+  {
+   "a": "how do I reset my password",
+   "b": "I forgot my password, how can I reset it",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is your refund policy",
+   "b": "can you explain how refunds work",
+   "label": "paraphrase"
+  },
+  {
+   "a": "where is my order",
+   "b": "can you tell me the status of my order",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I cancel my subscription",
+   "b": "I want to stop my subscription, how do I do that",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what are your opening hours",
+   "b": "when are you open",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how long does shipping take",
+   "b": "how many days until my package arrives",
+   "label": "paraphrase"
+  },
+  {
+   "a": "can I change my delivery address",
+   "b": "I need to update the shipping address on my order",
+   "label": "paraphrase"
+  },
+  {
+   "a": "do you ship internationally",
+   "b": "can you deliver to other countries",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I contact customer support",
+   "b": "what is the best way to reach your support team",
+   "label": "paraphrase"
+  },
+  {
+   "a": "is there a student discount",
+   "b": "do students get a discount",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I delete my account",
+   "b": "I want to permanently remove my account",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what payment methods do you accept",
+   "b": "which ways can I pay",
+   "label": "paraphrase"
+  },
+  {
+   "a": "summarize this article in one sentence",
+   "b": "give me a one-sentence summary of this article",
+   "label": "paraphrase"
+  },
+  {
+   "a": "translate hello into French",
+   "b": "what is hello in French",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is the capital of Australia",
+   "b": "which city is Australia's capital",
+   "label": "paraphrase"
+  },
+  {
+   "a": "convert 10 miles to kilometers",
+   "b": "how many kilometers is 10 miles",
+   "label": "paraphrase"
+  },
+  {
+   "a": "write a python function that reverses a string",
+   "b": "python code to reverse a string",
+   "label": "paraphrase"
+  },
+  {
+   "a": "explain what a hash map is",
+   "b": "what is a hash table and how does it work",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I enable two-factor authentication",
+   "b": "how can I turn on 2FA for my account",
+   "label": "paraphrase"
+  },
+  {
+   "a": "why was I charged twice",
+   "b": "I see a duplicate charge on my card",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I export my data",
+   "b": "can I download all of my data",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what does error 404 mean",
+   "b": "what is a 404 not found error",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how to sort a list in python",
+   "b": "sorting a python list",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what time zone are you in",
+   "b": "which timezone do you operate in",
+   "label": "paraphrase"
+  },
+  {
+   "a": "can I pay in installments",
+   "b": "do you offer payment plans",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I reset my password",
+   "b": "how do I reset my username",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is your refund policy",
+   "b": "what is your return shipping policy",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I cancel my subscription",
+   "b": "how do I pause my subscription",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I cancel my order",
+   "b": "how do I place my order",
+   "label": "near_miss"
+  },
+  {
+   "a": "what are your opening hours on Monday",
+   "b": "what are your opening hours on Sunday",
+   "label": "near_miss"
+  },
+  {
+   "a": "how long does shipping take to Canada",
+   "b": "how long does shipping take to Japan",
+   "label": "near_miss"
+  },
+  {
+   "a": "can I change my delivery address",
+   "b": "can I change my billing address",
+   "label": "near_miss"
+  },
+  {
+   "a": "is there a student discount",
+   "b": "is there a senior discount",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I delete my account",
+   "b": "how do I delete my comment",
+   "label": "near_miss"
+  },
+  {
+   "a": "convert 10 miles to kilometers",
+   "b": "convert 10 kilometers to miles",
+   "label": "near_miss"
+  },
+  {
+   "a": "write a python function that reverses a string",
+   "b": "write a python function that reverses a list",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is the capital of Australia",
+   "b": "what is the capital of Austria",
+   "label": "near_miss"
+  },
+  {
+   "a": "translate hello into French",
+   "b": "translate hello into Spanish",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I enable two-factor authentication",
+   "b": "how do I disable two-factor authentication",
+   "label": "near_miss"
+  },
+  {
+   "a": "sort a list in ascending order in python",
+   "b": "sort a list in descending order in python",
+   "label": "near_miss"
+  },
+  {
+   "a": "what does error 404 mean",
+   "b": "what does error 500 mean",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I export my data to CSV",
+   "b": "how do I import my data from CSV",
+   "label": "near_miss"
+  },
+  {
+   "a": "is the product in stock in red",
+   "b": "is the product in stock in blue",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is 15 percent of 200",
+   "b": "what is 25 percent of 200",
+   "label": "near_miss"
+  },
+  {
+   "a": "book a table for two at 7pm",
+   "b": "book a table for four at 7pm",
+   "label": "near_miss"
+  },
+  {
+   "a": "upgrade my plan to premium",
+   "b": "downgrade my plan to basic",
+   "label": "near_miss"
+  },
+  {
+   "a": "send the invoice to my email",
+   "b": "send the receipt to my email",
+   "label": "near_miss"
+  },
+  {
+   "a": "who won the 2018 world cup",
+   "b": "who won the 2022 world cup",
+   "label": "near_miss"
+  },
+  {
+   "a": "how many calories in an apple",
+   "b": "how many calories in a banana",
+   "label": "near_miss"
+  },
+  {
+   "a": "is it safe to take ibuprofen with alcohol",
+   "b": "is it safe to take ibuprofen with coffee",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I reset my password",
+   "b": "what is the capital of Australia",
+   "label": "unrelated"
+  },
+  {
+   "a": "what is your refund policy",
+   "b": "write a haiku about the ocean",
+   "label": "unrelated"
+  },
+  {
+   "a": "where is my order",
+   "b": "explain quantum entanglement simply",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I cancel my subscription",
+   "b": "what is 15 percent of 200",
+   "label": "unrelated"
+  },
+  {
+   "a": "what are your opening hours",
+   "b": "translate goodbye into German",
+   "label": "unrelated"
+  },
+  {
+   "a": "how long does shipping take",
+   "b": "who painted the Mona Lisa",
+   "label": "unrelated"
+  },
+  {
+   "a": "do you ship internationally",
+   "b": "how do I sort a list in python",
+   "label": "unrelated"
+  },
+  {
+   "a": "is there a student discount",
+   "b": "what does DNA stand for",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I delete my account",
+   "b": "recommend a good science fiction book",
+   "label": "unrelated"
+  },
+  {
+   "a": "what payment methods do you accept",
+   "b": "how tall is Mount Everest",
+   "label": "unrelated"
+  },
+  {
+   "a": "summarize this article in one sentence",
+   "b": "what is the boiling point of water",
+   "label": "unrelated"
+  },
+  {
+   "a": "convert 10 miles to kilometers",
+   "b": "how do I enable dark mode",
+   "label": "unrelated"
+  },
+  {
+   "a": "explain what a hash map is",
+   "b": "what is your phone number",
+   "label": "unrelated"
+  },
+  {
+   "a": "why was I charged twice",
+   "b": "what is the speed of light",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I export my data",
+   "b": "give me a recipe for pancakes",
+   "label": "unrelated"
+  },
+  {
+   "a": "what does error 404 mean",
+   "b": "who is the president of France",
+   "label": "unrelated"
+  },
+  {
+   "a": "what time zone are you in",
+   "b": "how do I write a for loop in C",
+   "label": "unrelated"
+  },
+  {
+   "a": "can I pay in installments",
+   "b": "what is photosynthesis",
+   "label": "unrelated"
+  },
+  {
+   "a": "book a table for two at 7pm",
+   "b": "how do I install numpy",
+   "label": "unrelated"
+  },
+  {
+   "a": "how many calories in an apple",
+   "b": "what is the refund window for electronics",
+   "label": "unrelated"
+  },
+  {
+   "a": "upgrade my plan to premium",
+   "b": "tell me a joke about cats",
+   "label": "unrelated"
+  },
+  {
+   "a": "who won the 2018 world cup",
+   "b": "how do I reset my router",
+   "label": "unrelated"
+  },
+  {
+   "a": "translate hello into French",
+   "b": "how much does shipping to Canada cost",
+   "label": "unrelated"
+  },
+  {
+   "a": "write a python function that reverses a string",
+   "b": "what are your opening hours",
+   "label": "unrelated"
+  },
+  {
+   "a": "is it safe to take ibuprofen with alcohol",
+   "b": "how do I change my delivery address",
+   "label": "unrelated"
+  }
+ ]
+}

@@ -26,6 +26,12 @@ pays, not wall-clock time.
 
 The bundled n-gram embedding provider is a placeholder. Semantic-tier results
 require a real embedding model and are excluded from the headline numbers.
+[`semantic-false-hits.md`](../benchmarks/reports/semantic-false-hits.md)
+measures why: on 75 labeled paraphrase / near-miss / unrelated pairs, the
+n-gram embedder scores near-misses above paraphrases, so at the 0.85 default
+every near-miss is a false hit and no threshold reaches zero. Re-run
+`benchmarks/scripts/e9_semantic_false_hits.py` with your embedder to choose a
+threshold.
 
 Deterministic, CI-checked versions of every mechanism run offline via the
 FakeLLM backend (`examples/`, `tests/python/`).
