@@ -50,6 +50,64 @@ jobs:
           cmake --build build-tests -j 2
       - name: Run ctest
         run: ctest --test-dir build-tests --output-on-failure
+      - name: Build the example plugin from the public header only
+        run: |
+          cmake -S examples/plugins/echo_backend -B build-echo
+          cmake --build build-echo
+
+  mlx-macos-arm64:
+    # MLX-tagged suite on Apple silicon (macos-14 runners are arm64).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require arm64
+        run: test "$(uname -m)" = arm64
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Build and run the MLX C++ suite
+        run: |
+          cmake -S . -B build-mlx \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCONTINUUM_BUILD_TESTS=ON \
+            -DCONTINUUM_BUILD_PYTHON=OFF \
+            -DCONTINUUM_WERROR=ON
+          cmake --build build-mlx -j 3
+          ctest --test-dir build-mlx -R '^MLX' --output-on-failure
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e .
+      - name: MLX conformance and libtorch parity
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: |
+          python -m continuum.backend_check mlx
+          python examples/09_hybrid_tensor_token.py
+
+  langchain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e .
+      - run: pip install -e "integrations/langchain[test]" "ruff>=0.15,<0.16"
+      - run: ruff check integrations/langchain
+      - run: pytest integrations/langchain/tests -q
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+      - name: Examples (FakeLLM backend)
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: |
+          python integrations/langchain/examples/cache_example.py
+          python integrations/langchain/examples/langgraph_checkpoint_example.py
 
   cpp-coverage:
     runs-on: ubuntu-latest

@@ -13,8 +13,37 @@
 namespace continuum::backend {
 namespace {
 
+// Reject tensors whose shape disagrees with their data: every kernel below
+// indexes `data` by shape, so a mismatch would read out of bounds.
+void Validate(const continuum::MlxTensorValue& t) {
+  std::size_t elems = 1;
+  for (const auto d : t.shape) {
+    if (d < 0) {
+      throw std::runtime_error("mlx backend: negative dimension in tensor shape");
+    }
+    const auto ud = static_cast<std::size_t>(d);
+    if (ud != 0 && elems > std::numeric_limits<std::size_t>::max() / ud) {
+      throw std::runtime_error("mlx backend: tensor shape overflows");
+    }
+    elems *= ud;
+  }
+  if (elems != t.data.size()) {
+    throw std::runtime_error("mlx backend: tensor shape describes " + std::to_string(elems) +
+                             " elements but data holds " + std::to_string(t.data.size()));
+  }
+}
+
+const continuum::Value& Input(const std::vector<continuum::Value>& inputs, std::size_t i, const std::string& op) {
+  if (i >= inputs.size()) {
+    throw std::runtime_error("mlx backend: " + op + " expects " + std::to_string(i + 1) + " input(s), got " +
+                             std::to_string(inputs.size()));
+  }
+  return inputs[i];
+}
+
 continuum::MlxTensorValue ToMlx(const continuum::Value& v) {
   if (const auto* mx = std::get_if<continuum::MlxTensorValue>(&v)) {
+    Validate(*mx);
     return *mx;
   }
   const auto* tv = std::get_if<continuum::TensorValue>(&v);
@@ -153,13 +182,14 @@ BackendRunResult MLXBackend::run_with_cache(
   if (payload == nullptr) {
     throw std::runtime_error("mlx backend: tensor op missing payload");
   }
-  if (payload->op_name == "input" || payload->op_name == "identity" || payload->op_name == "id") {
-    r.output = inputs.at(0);
+  const auto& op = payload->op_name;
+  if (op == "input" || op == "identity" || op == "id") {
+    r.output = Input(inputs, 0, op);
     r.compute_steps = 1;
     return r;
   }
 
-  auto a = ToMlx(inputs.at(0));
+  auto a = ToMlx(Input(inputs, 0, op));
   if (payload->op_name == "relu") {
     r.output = Relu(a);
     r.compute_steps = 1;
@@ -172,13 +202,13 @@ BackendRunResult MLXBackend::run_with_cache(
     return r;
   }
   if (payload->op_name == "add") {
-    auto b = ToMlx(inputs.at(1));
+    auto b = ToMlx(Input(inputs, 1, op));
     r.output = Add(a, b);
     r.compute_steps = 1;
     return r;
   }
   if (payload->op_name == "matmul") {
-    auto b = ToMlx(inputs.at(1));
+    auto b = ToMlx(Input(inputs, 1, op));
     r.output = Matmul2D(a, b);
     r.compute_steps = 1;
     return r;

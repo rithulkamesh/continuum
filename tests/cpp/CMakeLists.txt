@@ -13,6 +13,7 @@ add_executable(
   test_runtime_extras.cpp
   test_cir_corpus.cpp
   test_backend_plugins.cpp
+  test_mlx_backend.cpp
 )
 target_link_libraries(continuum_cpp_tests PRIVATE continuum_core GTest::gtest_main)
 target_compile_definitions(continuum_cpp_tests PRIVATE CONTINUUM_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
