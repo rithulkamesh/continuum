@@ -2,10 +2,18 @@
 #include <continuum/backend/backend_abi.h>
 #include <continuum/ir/node.hpp>
 
+#include <cstdlib>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 namespace continuum::backend {
 namespace {
@@ -61,10 +69,59 @@ continuum_backend_node_meta_t ToAbiNodeMeta(const ir::Node& node) {
 
 class BackendAbiAdapter final : public Backend {
  public:
-  explicit BackendAbiAdapter(continuum_backend_vtable_t vtable) : vtable_(vtable) {
-    if (vtable_.abi_version != CONTINUUM_BACKEND_ABI_VERSION) {
-      throw std::runtime_error("backend ABI version mismatch");
+  /// \p library keeps a dynamically loaded plugin mapped for as long as the
+  /// adapter lives; it is released only after `destroy` has run.
+  explicit BackendAbiAdapter(continuum_backend_vtable_t vtable, std::shared_ptr<void> library = nullptr)
+      : library_(std::move(library)), vtable_(vtable) {
+    if (vtable_.abi_version < CONTINUUM_BACKEND_ABI_MIN_VERSION ||
+        vtable_.abi_version > CONTINUUM_BACKEND_ABI_VERSION) {
+      throw std::runtime_error("backend ABI version mismatch: got " + std::to_string(vtable_.abi_version) +
+                               ", host supports " + std::to_string(CONTINUUM_BACKEND_ABI_MIN_VERSION) + "-" +
+                               std::to_string(CONTINUUM_BACKEND_ABI_VERSION));
     }
+    if (vtable_.abi_version < 2) {
+      // v1 vtables end at run_with_cache; never read fields they do not have.
+      vtable_.destroy = nullptr;
+      vtable_.export_state = nullptr;
+      vtable_.import_state = nullptr;
+    }
+  }
+
+  ~BackendAbiAdapter() override {
+    if (vtable_.destroy != nullptr) {
+      vtable_.destroy(vtable_.instance);
+    }
+  }
+
+  BackendAbiAdapter(const BackendAbiAdapter&) = delete;
+  BackendAbiAdapter& operator=(const BackendAbiAdapter&) = delete;
+
+  std::vector<std::uint8_t> export_state(const BackendState& state) const override {
+    if (vtable_.export_state == nullptr) {
+      return {};
+    }
+    const continuum_backend_state_t abi_state{state.handle};
+    const std::size_t needed = vtable_.export_state(vtable_.instance, abi_state, nullptr, 0);
+    if (needed == 0) {
+      return {};
+    }
+    std::vector<std::uint8_t> out(needed);
+    const std::size_t written = vtable_.export_state(vtable_.instance, abi_state, out.data(), out.size());
+    if (written != needed) {
+      return {};
+    }
+    return out;
+  }
+
+  std::optional<BackendState> import_state(const std::vector<std::uint8_t>& bytes) override {
+    if (vtable_.import_state == nullptr || bytes.empty()) {
+      return std::nullopt;
+    }
+    continuum_backend_state_t out{};
+    if (vtable_.import_state(vtable_.instance, bytes.data(), bytes.size(), &out) == 0) {
+      return std::nullopt;
+    }
+    return BackendState{out.handle};
   }
 
   BackendCapabilities capabilities() const override {
@@ -121,11 +178,124 @@ class BackendAbiAdapter final : public Backend {
   }
 
  private:
+  std::shared_ptr<void> library_;  // declared first: unmapped after destroy() runs
   continuum_backend_vtable_t vtable_{};
 };
 
+namespace {
+
+std::string LastLoaderError() {
+#if defined(_WIN32)
+  return "LoadLibrary error " + std::to_string(GetLastError());
+#else
+  const char* err = dlerror();
+  return err == nullptr ? std::string("unknown error") : std::string(err);
+#endif
+}
+
+std::shared_ptr<void> OpenLibrary(const std::string& path) {
+#if defined(_WIN32)
+  HMODULE handle = LoadLibraryA(path.c_str());
+  if (handle == nullptr) {
+    throw std::runtime_error("cannot load backend plugin " + path + ": " + LastLoaderError());
+  }
+  return std::shared_ptr<void>(handle, [](void* h) { FreeLibrary(static_cast<HMODULE>(h)); });
+#else
+  void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (handle == nullptr) {
+    throw std::runtime_error("cannot load backend plugin " + path + ": " + LastLoaderError());
+  }
+  return std::shared_ptr<void>(handle, [](void* h) { dlclose(h); });
+#endif
+}
+
+void* FindSymbol(const std::shared_ptr<void>& library, const char* name) {
+#if defined(_WIN32)
+  return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(library.get()), name));
+#else
+  dlerror();
+  return dlsym(library.get(), name);
+#endif
+}
+
+std::string Trim(const std::string& s) {
+  const auto begin = s.find_first_not_of(" \t\n\r");
+  if (begin == std::string::npos) {
+    return {};
+  }
+  const auto end = s.find_last_not_of(" \t\n\r");
+  return s.substr(begin, end - begin + 1);
+}
+
+}  // namespace
+
 std::shared_ptr<Backend> MakeBackendFromAbi(continuum_backend_vtable_t vtable) {
   return std::make_shared<BackendAbiAdapter>(vtable);
+}
+
+std::shared_ptr<Backend> LoadBackendPlugin(const std::string& path) {
+  auto library = OpenLibrary(path);
+  void* sym = FindSymbol(library, CONTINUUM_BACKEND_PLUGIN_INIT_SYMBOL);
+  if (sym == nullptr) {
+    throw std::runtime_error("backend plugin " + path + " does not export " +
+                             std::string(CONTINUUM_BACKEND_PLUGIN_INIT_SYMBOL));
+  }
+  auto init = reinterpret_cast<continuum_backend_plugin_init_fn>(sym);
+  continuum_backend_vtable_t vtable{};
+  const int rc = init(CONTINUUM_BACKEND_ABI_VERSION, &vtable);
+  if (rc != 0) {
+    throw std::runtime_error("backend plugin " + path + " init failed with code " + std::to_string(rc));
+  }
+  if (vtable.run_with_cache == nullptr) {
+    if (vtable.destroy != nullptr) {
+      vtable.destroy(vtable.instance);
+    }
+    throw std::runtime_error("backend plugin " + path + " vtable missing run_with_cache");
+  }
+  try {
+    return std::make_shared<BackendAbiAdapter>(vtable, std::move(library));
+  } catch (...) {
+    // Version rejected: the adapter never took ownership of the instance.
+    if (vtable.abi_version >= 2 && vtable.destroy != nullptr) {
+      vtable.destroy(vtable.instance);
+    }
+    throw;
+  }
+}
+
+std::vector<PluginSpec> ParsePluginSpecs(const std::string& spec) {
+  std::vector<PluginSpec> out;
+  std::size_t start = 0;
+  while (start <= spec.size()) {
+    auto end = spec.find(';', start);
+    if (end == std::string::npos) end = spec.size();
+    const std::string entry = Trim(spec.substr(start, end - start));
+    start = end + 1;
+    if (entry.empty()) {
+      continue;
+    }
+    const auto eq = entry.find('=');
+    if (eq == std::string::npos || eq == 0 || eq + 1 == entry.size()) {
+      throw std::runtime_error("bad plugin spec '" + entry + "': expected name[@priority]=path");
+    }
+    PluginSpec ps;
+    std::string head = Trim(entry.substr(0, eq));
+    ps.path = Trim(entry.substr(eq + 1));
+    const auto at = head.find('@');
+    if (at != std::string::npos) {
+      const std::string prio = head.substr(at + 1);
+      char* parse_end = nullptr;
+      const long value = std::strtol(prio.c_str(), &parse_end, 10);
+      if (prio.empty() || parse_end == nullptr || *parse_end != '\0') {
+        throw std::runtime_error("bad plugin priority '" + prio + "' in '" + entry + "'");
+      }
+      ps.priority = static_cast<int>(value);
+      head = head.substr(0, at);
+    }
+    ps.name = head;
+    out.push_back(std::move(ps));
+  }
+  return out;
 }
 
 }  // namespace continuum::backend

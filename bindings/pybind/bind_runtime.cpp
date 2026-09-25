@@ -13,6 +13,7 @@
 #include <continuum/runtime/memory_graph.hpp>
 #include <continuum/runtime/prefetch.hpp>
 #include <continuum/runtime/semantic_cache.hpp>
+#include <continuum/runtime/hit_verifier.hpp>
 #include <continuum/runtime/session.hpp>
 
 #include <pybind11/pybind11.h>
@@ -20,6 +21,7 @@
 #include <torch/torch.h>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -489,10 +491,56 @@ py::object ValueToPy(const continuum::Value& v) {
   if (const auto* i = std::get_if<int64_t>(&v)) return py::int_(*i);
   return py::none();
 }
+// Lets Python subclasses of EmbeddingProvider (local models, hosted endpoints,
+// precomputed vectors) plug into the semantic and memory-graph tiers.
+class PyEmbeddingProvider : public continuum::runtime::EmbeddingProvider {
+ public:
+  std::vector<float> embed(const std::string& text) const override {
+    PYBIND11_OVERRIDE_PURE(std::vector<float>, continuum::runtime::EmbeddingProvider, embed, text);
+  }
+  std::size_t dimension() const override {
+    PYBIND11_OVERRIDE_PURE(std::size_t, continuum::runtime::EmbeddingProvider, dimension);
+  }
+  std::string identity() const override {
+    PYBIND11_OVERRIDE_PURE(std::string, continuum::runtime::EmbeddingProvider, identity);
+  }
+};
+
+// Python subclasses of HitVerifier (an LLM judge, a cross-encoder, ...) gate
+// semantic-cache hits.
+class PyHitVerifier : public continuum::runtime::HitVerifier {
+ public:
+  bool verify(const std::string& cached_prompt, const std::string& new_prompt, float similarity) const override {
+    PYBIND11_OVERRIDE_PURE(bool, continuum::runtime::HitVerifier, verify, cached_prompt, new_prompt, similarity);
+  }
+  std::string name() const override {
+    PYBIND11_OVERRIDE_PURE(std::string, continuum::runtime::HitVerifier, name);
+  }
+};
+
+// Python subclasses of ReuseObserver receive the interpreter's trace events.
+class PyReuseObserver : public continuum::runtime::ReuseObserver {
+ public:
+  void on_event(const continuum::runtime::ReuseEvent& event) override {
+    PYBIND11_OVERRIDE_PURE(void, continuum::runtime::ReuseObserver, on_event, event);
+  }
+};
+
+// Model id DurableAgent uses when VLLM_BASE_URL points at a live server.
+constexpr const char* kDurableVllmModel = "vllm/gemma4";
+
+bool VllmServerConfigured() {
+  const char* base = std::getenv("VLLM_BASE_URL");
+  return base != nullptr && *base != '\0';
+}
+
 // Durable agent runner: a linear multi-step TokenOp workflow whose execution
 // can be checkpointed to bytes mid-run, resumed in a fresh process, or forked
-// by editing a value before resuming (time-travel). Backed by FakeLLM so
-// examples are deterministic and CI-checkable.
+// by editing a value before resuming (time-travel). Each step sees its own
+// prompt plus the previous step's output, so editing one step changes every
+// step after it. Backed by FakeLLM (deterministic, CI-checkable) unless
+// VLLM_BASE_URL is set, in which case steps run on that OpenAI-compatible
+// server (vLLM, Ollama, ...) as model `vllm/gemma4` by default.
 struct PyDurableAgent {
   continuum::backend::BackendRegistry registry;
   continuum::runtime::KVCacheIndex cache{4096};
@@ -503,14 +551,23 @@ struct PyDurableAgent {
   std::vector<continuum::ir::NodeId> prompt_ids;
   std::vector<continuum::ir::NodeId> step_ids;
 
+  std::string backend_name = "fake";
+
   PyDurableAgent() : interp(registry, cache) {
     registry.register_backend(
         "default", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+    if (VllmServerConfigured()) {
+      registry.register_backend(
+          "vllm", std::make_shared<continuum::backend::VllmShimBackend>(), 100);
+      backend_name = "vllm";
+    }
     interp.set_memo_table(&memo);
   }
 
   std::size_t begin(const std::vector<std::string>& prompts,
-                    const std::string& model_id, std::int32_t max_tokens) {
+                    const std::optional<std::string>& model_id_arg, std::int32_t max_tokens) {
+    const std::string model_id =
+        model_id_arg.value_or(backend_name == "vllm" ? kDurableVllmModel : "fake/model");
     graph = continuum::ir::Graph{};
     inputs.clear();
     prompt_ids.clear();
@@ -528,6 +585,9 @@ struct PyDurableAgent {
       t.payload = continuum::ir::TokenOpPayload{"generate", model_id, 0.0f, max_tokens};
       t.debug_name = "step" + std::to_string(i + 1) + "_generate";
       t.inputs.push_back(pid);
+      if (!step_ids.empty()) {
+        t.inputs.push_back(step_ids.back());  // chain: step i sees step i-1's output
+      }
       step_ids.push_back(graph.add_node(t));
     }
     interp.begin(graph, inputs);
@@ -538,8 +598,13 @@ struct PyDurableAgent {
     if (step_index >= step_ids.size()) {
       throw std::runtime_error("run_until_step: step index out of range");
     }
-    auto cp = interp.run_until(step_ids[step_index]);
-    auto bytes = continuum::runtime::serialize_checkpoint(cp);
+    std::vector<std::uint8_t> bytes;
+    {
+      // Backends may block on the network; let other Python threads run.
+      py::gil_scoped_release release;
+      auto cp = interp.run_until(step_ids[step_index]);
+      bytes = continuum::runtime::serialize_checkpoint(cp);
+    }
     return py::bytes(reinterpret_cast<const char*>(bytes.data()), bytes.size());
   }
 
@@ -547,9 +612,36 @@ struct PyDurableAgent {
     const std::string raw = blob;
     std::vector<std::uint8_t> bytes(raw.begin(), raw.end());
     auto cp = continuum::runtime::deserialize_checkpoint(bytes);
-    auto out = interp.resume(cp);
+    // Rebuild step bookkeeping from the checkpoint's graph so a fresh agent
+    // can report per-step outputs after resuming.
+    graph = continuum::ir::Graph::deserialize(cp.serialized_graph.data(), cp.serialized_graph.size());
+    prompt_ids.clear();
+    step_ids.clear();
+    for (const auto id : graph.topo_order()) {
+      const auto kind = graph.get(id).kind;
+      if (kind == continuum::ir::NodeKind::PromptOp) prompt_ids.push_back(id);
+      if (kind == continuum::ir::NodeKind::TokenOp) step_ids.push_back(id);
+    }
+    std::sort(prompt_ids.begin(), prompt_ids.end());
+    std::sort(step_ids.begin(), step_ids.end());
+    std::vector<continuum::Value> out;
+    {
+      py::gil_scoped_release release;
+      out = interp.resume(cp);
+    }
     py::list result;
     for (const auto& v : out) result.append(ValueToPy(v));
+    return result;
+  }
+
+  // Generated output of each step, in step order; None for steps not yet run.
+  py::list step_outputs() const {
+    const auto& values = interp.active_values();
+    py::list result;
+    for (const auto id : step_ids) {
+      auto it = values.find(id);
+      result.append(it == values.end() ? py::none() : ValueToPy(it->second));
+    }
     return result;
   }
 
@@ -739,6 +831,38 @@ void bind_runtime(py::module_& m) {
       .value("ThresholdPrefixLen", continuum::runtime::ReusePolicyKind::ThresholdPrefixLen)
       .export_values();
 
+  py::enum_<continuum::runtime::ReuseEventKind>(m, "ReuseEventKind")
+      .value("TierLookup", continuum::runtime::ReuseEventKind::TierLookup)
+      .value("NodeExecution", continuum::runtime::ReuseEventKind::NodeExecution);
+
+  {
+    using E = continuum::runtime::ReuseEvent;
+    py::class_<E>(m, "ReuseEvent")
+        .def_readonly("kind", &E::kind)
+        .def_readonly("tier", &E::tier)
+        .def_readonly("node_name", &E::node_name)
+        .def_readonly("node_kind", &E::node_kind)
+        .def_readonly("backend", &E::backend)
+        .def_readonly("model_id", &E::model_id)
+        .def_readonly("cache_namespace", &E::cache_namespace)
+        .def_readonly("hit", &E::hit)
+        .def_readonly("served_by", &E::served_by)
+        .def_readonly("similarity", &E::similarity)
+        .def_readonly("match_len", &E::match_len)
+        .def_readonly("total_tokens", &E::total_tokens)
+        .def_readonly("tokens_saved", &E::tokens_saved)
+        .def_readonly("tokens_sent", &E::tokens_sent)
+        .def_readonly("reused_prefix_len", &E::reused_prefix_len)
+        .def_readonly("compute_steps", &E::compute_steps)
+        .def_readonly("used_cached_state", &E::used_cached_state)
+        .def_readonly("start_unix_ns", &E::start_unix_ns)
+        .def_readonly("end_unix_ns", &E::end_unix_ns);
+  }
+
+  py::class_<continuum::runtime::ReuseObserver, PyReuseObserver>(m, "ReuseObserver")
+      .def(py::init<>())
+      .def("on_event", &continuum::runtime::ReuseObserver::on_event, py::arg("event"));
+
   py::class_<continuum::runtime::ReusePolicy>(m, "ReusePolicy")
       .def(py::init<>())
       .def_static("always", &continuum::runtime::ReusePolicy::always)
@@ -771,12 +895,28 @@ void bind_runtime(py::module_& m) {
       .def("token_reduction_ratio", &continuum::runtime::ReuseMetrics::token_reduction_ratio)
       .def("reset", &continuum::runtime::ReuseMetrics::reset);
 
+  py::class_<continuum::runtime::KVCacheIndex>(m, "KVCacheIndex")
+      .def(py::init<std::size_t>(), py::arg("max_entries") = 8192)
+      .def("size", &continuum::runtime::KVCacheIndex::size)
+      .def("max_entries", &continuum::runtime::KVCacheIndex::max_entries)
+      .def("estimated_bytes", &continuum::runtime::KVCacheIndex::estimated_bytes)
+      .def("clear", &continuum::runtime::KVCacheIndex::clear);
+
   py::class_<continuum::runtime::Session>(m, "Session")
       .def(py::init([](const std::string& id, py::object backend_registry, std::size_t max_cache) {
              auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
              return new continuum::runtime::Session(id, reg, max_cache);
            }),
-           py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192)
+           py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192,
+           py::keep_alive<1, 3>())  // Session holds a reference to the registry
+      .def(py::init([](const std::string& id, py::object backend_registry,
+                       continuum::runtime::KVCacheIndex& cache) {
+             auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
+             return new continuum::runtime::Session(id, reg, cache);
+           }),
+           py::arg("id"), py::arg("backends"), py::arg("cache"),
+           py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+           "Share one prefix-KV cache across sessions (it is internally locked).")
       .def("run", [](continuum::runtime::Session& self, const continuum::ir::Graph& graph,
                      const std::unordered_map<continuum::ir::NodeId, continuum::Value>& inputs) {
              return self.run(graph, inputs);
@@ -795,7 +935,51 @@ void bind_runtime(py::module_& m) {
       .def("reset_metrics", &continuum::runtime::Session::reset_metrics)
       .def("save_cache_metadata", &continuum::runtime::Session::save_cache_metadata)
       .def("load_cache_metadata", &continuum::runtime::Session::load_cache_metadata)
+      .def("generate", [](continuum::runtime::Session& self, const std::vector<std::string>& prompt_parts,
+                          const std::string& model_id, std::int32_t max_tokens, float temperature,
+                          const std::string& op_name) -> py::object {
+             // One PromptOp per part feeding a single TokenOp: the smallest graph
+             // that exercises every reuse tier from Python.
+             continuum::ir::Graph g;
+             std::unordered_map<continuum::ir::NodeId, continuum::Value> inputs;
+             continuum::ir::Node tok;
+             tok.kind = continuum::ir::NodeKind::TokenOp;
+             tok.debug_name = "generate";
+             tok.payload = continuum::ir::TokenOpPayload{op_name, model_id, temperature, max_tokens};
+             for (std::size_t i = 0; i < prompt_parts.size(); ++i) {
+               continuum::ir::Node p;
+               p.kind = continuum::ir::NodeKind::PromptOp;
+               p.debug_name = "prompt" + std::to_string(i);
+               const auto pid = g.add_node(p);
+               inputs[pid] = continuum::Value{prompt_parts[i]};
+               tok.inputs.push_back(pid);
+             }
+             g.add_node(tok);
+             std::vector<continuum::Value> out;
+             {
+               py::gil_scoped_release release;
+               out = self.run(g, inputs);
+             }
+             return out.empty() ? py::none() : ValueToPy(out.back());
+           },
+           py::arg("prompt_parts"), py::arg("model_id"), py::arg("max_tokens") = 128,
+           py::arg("temperature") = 0.0f, py::arg("op_name") = "generate")
       .def("cache_size", [](const continuum::runtime::Session& self) { return self.cache().size(); })
+      .def("set_observer", [](continuum::runtime::Session& self, py::object obs) {
+             self.set_observer(obs.is_none() ? nullptr : obs.cast<continuum::runtime::ReuseObserver*>());
+           }, py::arg("observer"), py::keep_alive<1, 2>(),
+           "Send tier-lookup and node-execution ReuseEvents to `observer` (None disables).")
+      .def("cache_stats", [](const continuum::runtime::Session& self) {
+             py::dict out;
+             for (const auto& s : self.cache_stats()) {
+               py::dict d;
+               d["entries"] = s.entries;
+               d["capacity"] = s.capacity;
+               d["bytes"] = s.bytes;
+               out[py::str(s.tier)] = d;
+             }
+             return out;
+           })
       .def_property_readonly("id", &continuum::runtime::Session::id)
       .def_property_readonly("run_count", &continuum::runtime::Session::run_count)
       .def("memo_table_ptr", [](const continuum::runtime::Session& self) -> py::object {
@@ -813,7 +997,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* mt = memo_table_obj.cast<continuum::runtime::MemoTable*>();
              self.set_memo_table(mt);
-           }, py::arg("memo_table"))
+           }, py::arg("memo_table"), py::keep_alive<1, 2>())
       .def("set_semantic_cache", [](continuum::runtime::Session& self, py::object sc_obj) {
              if (sc_obj.is_none()) {
                self.set_semantic_cache(nullptr);
@@ -821,7 +1005,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* sc = sc_obj.cast<continuum::runtime::SemanticCacheIndex*>();
              self.set_semantic_cache(sc);
-           }, py::arg("semantic_cache"))
+           }, py::arg("semantic_cache"), py::keep_alive<1, 2>())
       .def("set_embedding_provider", [](continuum::runtime::Session& self, py::object ep_obj) {
              if (ep_obj.is_none()) {
                self.set_embedding_provider(nullptr);
@@ -829,7 +1013,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* ep = ep_obj.cast<continuum::runtime::EmbeddingProvider*>();
              self.set_embedding_provider(ep);
-           }, py::arg("embedding_provider"))
+           }, py::arg("embedding_provider"), py::keep_alive<1, 2>())
       .def("set_layer_cache", [](continuum::runtime::Session& self, py::object lc_obj) {
              if (lc_obj.is_none()) {
                self.set_layer_cache(nullptr);
@@ -837,7 +1021,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* lc = lc_obj.cast<continuum::runtime::LayerKVCacheIndex*>();
              self.set_layer_cache(lc);
-           }, py::arg("layer_cache"))
+           }, py::arg("layer_cache"), py::keep_alive<1, 2>())
       .def("set_memory_graph", [](continuum::runtime::Session& self, py::object mg_obj) {
              if (mg_obj.is_none()) {
                self.set_memory_graph(nullptr);
@@ -845,7 +1029,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* mg = mg_obj.cast<continuum::runtime::MemoryGraphStore*>();
              self.set_memory_graph(mg);
-           }, py::arg("memory_graph"));
+           }, py::arg("memory_graph"), py::keep_alive<1, 2>());
 
   // End-to-end check that LayerKVCacheIndex + MemoryGraphStore are wired into the
   // Session/Interpreter execution path. Runs the same TokenOp graph twice (no
@@ -891,12 +1075,40 @@ void bind_runtime(py::module_& m) {
     return r;
   });
 
+  auto to_vec = [](const py::bytes& blob) {
+    const std::string raw = blob;
+    return std::vector<std::uint8_t>(raw.begin(), raw.end());
+  };
+  auto to_bytes = [](const std::vector<std::uint8_t>& v) {
+    return py::bytes(reinterpret_cast<const char*>(v.data()), v.size());
+  };
+  m.def("checkpoint_delta", [=](const py::bytes& base, const py::bytes& next) {
+          return to_bytes(continuum::runtime::serialize_checkpoint_delta(
+              continuum::runtime::deserialize_checkpoint(to_vec(base)),
+              continuum::runtime::deserialize_checkpoint(to_vec(next))));
+        }, py::arg("base"), py::arg("next"),
+        "Encode checkpoint `next` as a delta against checkpoint `base` (both full checkpoint bytes).");
+  m.def("apply_checkpoint_delta", [=](const py::bytes& base, const py::bytes& delta) {
+          return to_bytes(continuum::runtime::serialize_checkpoint(continuum::runtime::apply_checkpoint_delta(
+              continuum::runtime::deserialize_checkpoint(to_vec(base)), to_vec(delta))));
+        }, py::arg("base"), py::arg("delta"),
+        "Rebuild the full checkpoint bytes a delta encodes against `base`.");
+  m.def("is_checkpoint_delta", [=](const py::bytes& blob) {
+          return continuum::runtime::is_checkpoint_delta(to_vec(blob));
+        }, py::arg("blob"));
+
   py::class_<PyDurableAgent>(m, "DurableAgent")
       .def(py::init<>())
       .def("begin", &PyDurableAgent::begin, py::arg("prompts"),
-           py::arg("model_id") = "fake/model", py::arg("max_tokens") = 32)
+           py::arg("model_id") = py::none(), py::arg("max_tokens") = 32)
+      .def_readonly("backend", &PyDurableAgent::backend_name)
       .def("run_until_step", &PyDurableAgent::run_until_step, py::arg("step_index"))
       .def("resume_from", &PyDurableAgent::resume_from, py::arg("checkpoint"))
+      .def("step_outputs", &PyDurableAgent::step_outputs)
+      .def("set_observer", [](PyDurableAgent& self, py::object obs) {
+             self.interp.set_observer(obs.is_none() ? nullptr : obs.cast<continuum::runtime::ReuseObserver*>());
+           }, py::arg("observer"), py::keep_alive<1, 2>(),
+           "Send tier-lookup and node-execution ReuseEvents to `observer` (None disables).")
       .def("cache_size", [](const PyDurableAgent& self) { return self.cache.size(); })
       .def_readonly("prompt_node_ids", &PyDurableAgent::prompt_ids)
       .def_readonly("step_node_ids", &PyDurableAgent::step_ids)
@@ -1087,6 +1299,20 @@ void bind_runtime(py::module_& m) {
   // === v1.1 bindings ===
 
   py::class_<continuum::runtime::MemoKey>(m, "MemoKey")
+      .def(py::init<>())
+      .def(py::init([](const std::string& node_kind_str, const std::string& payload_hash,
+                       py::bytes inputs_hash, const std::string& cache_namespace) {
+             continuum::runtime::MemoKey key;
+             key.node_kind_str = node_kind_str;
+             key.payload_hash = payload_hash;
+             const std::string raw(inputs_hash);
+             key.inputs_hash.assign(raw.begin(), raw.end());
+             key.cache_namespace = cache_namespace;
+             return key;
+           }),
+           py::arg("node_kind_str"), py::arg("payload_hash"), py::arg("inputs_hash") = py::bytes(""),
+           py::arg("cache_namespace") = "")
+      .def_readwrite("cache_namespace", &continuum::runtime::MemoKey::cache_namespace)
       .def_readwrite("node_kind_str", &continuum::runtime::MemoKey::node_kind_str)
       .def_readwrite("payload_hash", &continuum::runtime::MemoKey::payload_hash)
       .def_readwrite("inputs_hash", &continuum::runtime::MemoKey::inputs_hash);
@@ -1094,6 +1320,8 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::MemoTable>(m, "MemoTable")
       .def(py::init<std::size_t, std::size_t>(), py::arg("max_entries") = 4096, py::arg("version") = 0)
       .def("size", &continuum::runtime::MemoTable::size)
+      .def("max_entries", &continuum::runtime::MemoTable::max_entries)
+      .def("estimated_bytes", &continuum::runtime::MemoTable::estimated_bytes)
       .def("version", &continuum::runtime::MemoTable::version)
       .def("set_version", &continuum::runtime::MemoTable::set_version)
       .def("lookup", [](const continuum::runtime::MemoTable& self, const continuum::runtime::MemoKey& key) -> py::object {
@@ -1134,28 +1362,50 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::SemanticCacheIndex>(m, "SemanticCacheIndex")
       .def(py::init<std::size_t, float>(), py::arg("max_entries") = 2048, py::arg("similarity_threshold") = 0.85f)
       .def("size", &continuum::runtime::SemanticCacheIndex::size)
+      .def("max_entries", &continuum::runtime::SemanticCacheIndex::max_entries)
+      .def("estimated_bytes", &continuum::runtime::SemanticCacheIndex::estimated_bytes)
       .def("similarity_threshold", &continuum::runtime::SemanticCacheIndex::similarity_threshold)
       .def("set_similarity_threshold", &continuum::runtime::SemanticCacheIndex::set_similarity_threshold)
       .def("lookup", [](const continuum::runtime::SemanticCacheIndex& self,
-                          py::list query_embedding, const std::string& model_id) -> py::dict {
+                          py::list query_embedding, const std::string& model_id,
+                          const std::string& cache_namespace, const std::string& embedder_id,
+                          const std::string& query_prompt) -> py::dict {
              std::vector<float> emb;
              for (auto x : query_embedding) emb.push_back(py::cast<float>(x));
-             auto r = self.lookup(emb, model_id);
+             continuum::runtime::SemanticCacheIndex::LookupResult r;
+             {
+               py::gil_scoped_release release;  // a Python verifier re-acquires it
+               r = self.lookup(emb, model_id, cache_namespace, embedder_id, query_prompt);
+             }
              py::dict d;
              d["output"] = py::bytes(reinterpret_cast<const char*>(r.output.data()), r.output.size());
              d["similarity"] = r.similarity;
              d["above_threshold"] = r.above_threshold;
+             d["prompt"] = r.prompt;
+             d["verifier_rejections"] = r.verifier_rejections;
              return d;
-           }, py::arg("query_embedding"), py::arg("model_id"))
+           }, py::arg("query_embedding"), py::arg("model_id"), py::arg("cache_namespace") = "",
+           py::arg("embedder_id") = "", py::arg("query_prompt") = "")
       .def("insert", [](continuum::runtime::SemanticCacheIndex& self,
                           py::list embedding, const std::string& model_id,
-                          py::bytes output_bytes) {
+                          py::bytes output_bytes, const std::string& cache_namespace,
+                          const std::string& embedder_id, const std::string& prompt) {
              std::vector<float> emb;
              for (auto x : embedding) emb.push_back(py::cast<float>(x));
              std::string bytes(output_bytes);
              std::vector<std::uint8_t> out(bytes.begin(), bytes.end());
-             self.insert(emb, model_id, std::move(out));
-           }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"))
+             self.insert(emb, model_id, std::move(out), cache_namespace, embedder_id, prompt);
+           }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"),
+           py::arg("cache_namespace") = "", py::arg("embedder_id") = "", py::arg("prompt") = "")
+      .def("set_verifier", [](continuum::runtime::SemanticCacheIndex& self, py::object v) {
+             self.set_verifier(v.is_none() ? nullptr : v.cast<std::shared_ptr<continuum::runtime::HitVerifier>>());
+           }, py::arg("verifier"), py::keep_alive<1, 2>(),
+           "Gate hits with a HitVerifier (default LexicalNearMissVerifier); None disables verification.")
+      .def("verifier_name", [](const continuum::runtime::SemanticCacheIndex& self) -> py::object {
+             auto v = self.verifier();
+             return v == nullptr ? py::object(py::none()) : py::object(py::str(v->name()));
+           })
+      .def("verifier_rejections", &continuum::runtime::SemanticCacheIndex::verifier_rejections)
       .def("clear", &continuum::runtime::SemanticCacheIndex::clear)
       .def_static("cosine_similarity", [](py::list a, py::list b) {
         std::vector<float> va, vb;
@@ -1167,12 +1417,80 @@ void bind_runtime(py::module_& m) {
   py::class_<continuum::runtime::MemoryGraphStore>(m, "MemoryGraphStore")
       .def(py::init<std::size_t>(), py::arg("max_nodes") = 8192)
       .def("size", &continuum::runtime::MemoryGraphStore::size)
+      .def("max_nodes", &continuum::runtime::MemoryGraphStore::max_nodes)
+      .def("estimated_bytes", &continuum::runtime::MemoryGraphStore::estimated_bytes)
+      .def("add_node", [](continuum::runtime::MemoryGraphStore& self, const std::string& content,
+                          std::vector<float> embedding, const std::string& cache_namespace,
+                          int node_type) {
+             continuum::runtime::MemoryNode node;
+             node.type = static_cast<continuum::runtime::MemoryNodeType>(node_type);
+             node.content = content;
+             node.embedding = std::move(embedding);
+             node.session_id = cache_namespace;
+             return self.add_node(std::move(node));
+           }, py::arg("content"), py::arg("embedding"), py::arg("cache_namespace") = "",
+           py::arg("node_type") = 0)
+      .def("get_node", [](const continuum::runtime::MemoryGraphStore& self, std::uint64_t id) -> py::object {
+             auto node = self.get_node(id);
+             if (!node.has_value()) return py::none();
+             py::dict d;
+             d["id"] = node->id;
+             d["type"] = static_cast<int>(node->type);
+             d["content"] = node->content;
+             d["cache_namespace"] = node->session_id;
+             return d;
+           }, py::arg("id"))
+      .def("retrieve_similar", [](const continuum::runtime::MemoryGraphStore& self,
+                                  const std::vector<float>& query, std::size_t max_results,
+                                  float min_similarity, const std::string& cache_namespace) {
+             py::list out;
+             for (const auto& r : self.retrieve_similar(query, max_results, min_similarity, cache_namespace)) {
+               py::dict d;
+               d["id"] = r.node.id;
+               d["content"] = r.node.content;
+               d["similarity"] = r.similarity;
+               out.append(d);
+             }
+             return out;
+           }, py::arg("query_embedding"), py::arg("max_results") = 5, py::arg("min_similarity") = 0.7f,
+           py::arg("cache_namespace") = "")
       .def("clear", &continuum::runtime::MemoryGraphStore::clear);
 
   py::class_<continuum::runtime::LayerKVCacheIndex>(m, "LayerKVCacheIndex")
       .def(py::init<std::size_t, std::size_t>(), py::arg("max_entries") = 4096, py::arg("max_bytes") = 256 * 1024 * 1024)
       .def("size", &continuum::runtime::LayerKVCacheIndex::size)
+      .def("max_entries", &continuum::runtime::LayerKVCacheIndex::max_entries)
+      .def("max_bytes", &continuum::runtime::LayerKVCacheIndex::max_bytes)
       .def("estimated_bytes", &continuum::runtime::LayerKVCacheIndex::estimated_bytes)
+      .def("insert", [](continuum::runtime::LayerKVCacheIndex& self, const std::string& model_id,
+                        const std::vector<std::int32_t>& tokens, std::int32_t layer_id,
+                        std::size_t estimated_bytes, const std::string& decode_hash,
+                        std::uint64_t arch_version, const std::string& cache_namespace) {
+             continuum::runtime::LayerCheckpoint cp;
+             cp.model_id = model_id;
+             cp.tokens = tokens;
+             cp.prefix_len = static_cast<std::int32_t>(tokens.size());
+             cp.layer_id = layer_id;
+             cp.estimated_bytes = estimated_bytes;
+             cp.decode_hash = decode_hash;
+             cp.arch_version = arch_version;
+             cp.cache_namespace = cache_namespace;
+             self.insert(std::move(cp));
+           }, py::arg("model_id"), py::arg("tokens"), py::arg("layer_id"), py::arg("estimated_bytes"),
+           py::arg("decode_hash") = "", py::arg("arch_version") = 0, py::arg("cache_namespace") = "")
+      .def("find_deepest", [](const continuum::runtime::LayerKVCacheIndex& self, const std::string& model_id,
+                              const std::vector<std::int32_t>& tokens, std::int32_t total_layers,
+                              const std::string& decode_hash, std::uint64_t arch_version,
+                              const std::string& cache_namespace) {
+             const auto r = self.find_deepest(model_id, decode_hash, tokens, total_layers, arch_version,
+                                              cache_namespace);
+             py::dict d;
+             d["found"] = r.found;
+             d["layer_id"] = r.layer_id;
+             d["prefix_len"] = r.prefix_len;
+             return d;
+           }, py::arg("model_id"), py::arg("tokens"), py::arg("total_layers"), py::arg("decode_hash") = "",
+           py::arg("arch_version") = 0, py::arg("cache_namespace") = "")
       .def("clear", &continuum::runtime::LayerKVCacheIndex::clear);
 
   py::class_<continuum::runtime::FutureCache>(m, "FutureCache")
@@ -1197,6 +1515,8 @@ void bind_runtime(py::module_& m) {
       .def("invalidate", &continuum::runtime::FutureCache::invalidate,
           py::arg("key"))
       .def("size", &continuum::runtime::FutureCache::size)
+      .def("max_entries", &continuum::runtime::FutureCache::max_entries)
+      .def("estimated_bytes", &continuum::runtime::FutureCache::estimated_bytes)
       .def("clear", &continuum::runtime::FutureCache::clear);
 
   m.def("run_v11_benchmark", [](double cost_per_token_ms, int num_steps,
@@ -1271,11 +1591,33 @@ void bind_runtime(py::module_& m) {
   }, py::arg("cost_per_token_ms") = 2.0, py::arg("num_steps") = 20,
      py::arg("prefix_tokens") = 30);
 
-  py::class_<continuum::runtime::EmbeddingProvider, std::unique_ptr<continuum::runtime::EmbeddingProvider, py::nodelete>>(m, "EmbeddingProvider");
+  py::class_<continuum::runtime::HitVerifier, PyHitVerifier, std::shared_ptr<continuum::runtime::HitVerifier>>(
+      m, "HitVerifier")
+      .def(py::init<>())
+      .def("verify", &continuum::runtime::HitVerifier::verify, py::arg("cached_prompt"), py::arg("new_prompt"),
+           py::arg("similarity") = 1.0f)
+      .def("name", &continuum::runtime::HitVerifier::name);
+
+  py::class_<continuum::runtime::LexicalNearMissVerifier, continuum::runtime::HitVerifier,
+             std::shared_ptr<continuum::runtime::LexicalNearMissVerifier>>(m, "LexicalNearMissVerifier")
+      .def(py::init<>())
+      .def_static("explain", [](const std::string& a, const std::string& b) {
+             const auto v = continuum::runtime::LexicalNearMissVerifier::explain(a, b);
+             py::dict d;
+             d["accept"] = v.accept;
+             d["reason"] = v.reason;
+             return d;
+           }, py::arg("cached_prompt"), py::arg("new_prompt"));
+
+  py::class_<continuum::runtime::EmbeddingProvider, PyEmbeddingProvider>(m, "EmbeddingProvider")
+      .def(py::init<>())
+      .def("embed", &continuum::runtime::EmbeddingProvider::embed, py::arg("text"))
+      .def("dimension", &continuum::runtime::EmbeddingProvider::dimension)
+      .def("identity", &continuum::runtime::EmbeddingProvider::identity);
 
   py::class_<continuum::runtime::BruteForceEmbeddingProvider, continuum::runtime::EmbeddingProvider>(m, "BruteForceEmbeddingProvider")
-      .def(py::init([](std::size_t dim) { return new continuum::runtime::BruteForceEmbeddingProvider(dim); }),
-           py::arg("dim") = 64)
+      .def(py::init<std::size_t>(), py::arg("dim") = 64)
+      .def("identity", &continuum::runtime::BruteForceEmbeddingProvider::identity)
       .def("embed", [](const continuum::runtime::BruteForceEmbeddingProvider& self, const std::string& text) {
              return self.embed(text);
            }, py::arg("text"))

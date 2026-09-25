@@ -1,5 +1,6 @@
 #include <continuum/backend/backend.hpp>
 
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -12,6 +13,31 @@ void BackendRegistry::register_backend(const std::string& name, std::shared_ptr<
   entry.capabilities = backend->capabilities();
   entry.backend = std::move(backend);
   backends_[name] = std::move(entry);
+}
+
+void BackendRegistry::load_plugin(const std::string& name, const std::string& path, int priority) {
+  register_backend(name, LoadBackendPlugin(path), priority);
+}
+
+std::size_t BackendRegistry::load_plugins_from_env(const char* env_var) {
+  const char* raw = std::getenv(env_var);
+  if (raw == nullptr) {
+    return 0;
+  }
+  const auto specs = ParsePluginSpecs(raw);
+  for (const auto& spec : specs) {
+    load_plugin(spec.name, spec.path, spec.priority);
+  }
+  return specs.size();
+}
+
+std::vector<std::string> BackendRegistry::names() const {
+  std::vector<std::string> out;
+  out.reserve(backends_.size());
+  for (const auto& [name, entry] : backends_) {
+    out.push_back(name);
+  }
+  return out;
 }
 
 std::shared_ptr<Backend> BackendRegistry::get(const std::string& name) const {

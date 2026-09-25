@@ -14,6 +14,7 @@ one reuse mechanism enabled at a time. Runner scripts live in
 | Mixed 20-step agent workflow | prefix + repeats + paraphrases + cold queries | 92.5% token reduction, 4/20 backend calls eliminated |
 | Cross-session cold start | persist cache metadata, restart, reload | >=80% hit rate on first warm run |
 | No-reuse worst case | 4 unrelated queries | ~0.5% overhead, no errors |
+| Memory-graph recall (isolated, offline) | 12-turn labeled log, 8 follow-ups; 128 to 8,192 nodes | top-1 on-topic 8/8, precision@3 0.58 at the 0.7 default; 3.4 ms p50 lookup at 8,192 nodes ([report](../benchmarks/reports/memory-graph-recall.md)) |
 
 ![Continuum benchmark dashboard](../benchmarks/plots/summary_dashboard.png)
 
@@ -25,6 +26,12 @@ pays, not wall-clock time.
 
 The bundled n-gram embedding provider is a placeholder. Semantic-tier results
 require a real embedding model and are excluded from the headline numbers.
+[`semantic-false-hits.md`](../benchmarks/reports/semantic-false-hits.md)
+measures why and what fixes it. On a held-out test set, no embedder alone
+reaches zero false hits. With the semantic tier's default hit verifier, the
+local WordLlama embedder at threshold 0.7 has zero false hits and zero wrong
+answers served. Re-run `benchmarks/scripts/e9_semantic_false_hits.py` with
+your embedder, or with an Ollama LLM judge, to choose a threshold.
 
 Deterministic, CI-checked versions of every mechanism run offline via the
 FakeLLM backend (`examples/`, `tests/python/`).

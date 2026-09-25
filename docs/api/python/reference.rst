@@ -32,6 +32,26 @@ Frontend
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: continuum.checkpoints
+   :members:
+   :show-inheritance:
+
+.. automodule:: continuum.proxy
+   :members: ContinuumProxy, ProxyConfig
+   :show-inheritance:
+
+.. automodule:: continuum.telemetry
+   :members: OpenTelemetryObserver, CallbackObserver, instrument, auto_instrument, enabled_from_env
+   :show-inheritance:
+
+.. automodule:: continuum.embeddings
+   :members: CallableEmbeddingProvider, OpenAICompatibleEmbeddingProvider, PrecomputedEmbeddingProvider, WordLlamaEmbeddingProvider
+   :show-inheritance:
+
+.. automodule:: continuum.verifiers
+   :members: LLMJudgeVerifier, AllOf
+   :show-inheritance:
+
 Runtime
 -------
 
@@ -51,10 +71,12 @@ DurableAgent
    A step-sequenced agent run that can be checkpointed, resumed, and forked.
    See :doc:`durable`.
 
-   .. py:method:: begin(prompts, model_id="fake/model", max_tokens=32)
+   .. py:method:: begin(prompts, model_id=None, max_tokens=32)
 
       Build the graph for a list of step prompts. Returns the step count. Each
-      prompt becomes a ``PromptOp`` feeding a ``TokenOp``.
+      prompt becomes a ``PromptOp`` feeding a ``TokenOp``; every step after the
+      first also receives the previous step's output. ``model_id`` defaults to
+      ``"vllm/gemma4"`` when ``VLLM_BASE_URL`` is set, else ``"fake/model"``.
 
    .. py:method:: run_until_step(step_index)
 
@@ -70,6 +92,15 @@ DurableAgent
    .. py:method:: cache_size()
 
       Number of warm KV entries currently held.
+
+   .. py:method:: step_outputs()
+
+      Each step's generated output in step order (``None`` if not yet run):
+      text on a live server, token ids on the fake backend.
+
+   .. py:attribute:: backend
+
+      ``"vllm"`` when ``VLLM_BASE_URL`` is set, else ``"fake"``.
 
    .. py:staticmethod:: inspect(checkpoint)
 
@@ -121,7 +152,19 @@ Session
       Persist and reload the cache index across processes. See
       :doc:`reuse` on cross-session persistence.
 
+   .. py:method:: generate(prompt_parts, model_id, max_tokens=128, temperature=0.0, op_name="generate")
+
+      Run one generation through the reuse stack: each string in
+      ``prompt_parts`` becomes a ``PromptOp`` feeding a single ``TokenOp``.
+      Returns the output value and appends a step to ``metrics()``.
+
    .. py:method:: cache_size()
+
+   .. py:method:: cache_stats()
+
+      Per-tier occupancy: ``{tier: {"entries", "capacity", "bytes"}}`` for
+      every attached tier. See "Eviction and memory bounds" in
+      ``docs/design/cache.md``.
 
    .. py:method:: set_memo_table(table)
    .. py:method:: set_semantic_cache(index)
@@ -169,7 +212,9 @@ methods above:
 
 - ``MemoTable`` / ``MemoKey`` : exact-repeat memoization.
 - ``SemanticCacheIndex`` : embedding-matched near-duplicates. Needs an
-  ``EmbeddingProvider`` (``BruteForceEmbeddingProvider`` is bundled).
+  ``EmbeddingProvider``: ``BruteForceEmbeddingProvider`` is bundled, and
+  :mod:`continuum.embeddings` adapts local models, hosted endpoints, and
+  precomputed vectors. Subclass ``EmbeddingProvider`` for anything else.
 - ``LayerKVCacheIndex`` : warm attention-layer state.
 - ``MemoryGraphStore`` : prior-run context recall.
 - ``FutureCache`` : in-flight de-duplication of concurrent identical calls.

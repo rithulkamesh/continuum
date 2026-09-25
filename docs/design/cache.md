@@ -30,9 +30,163 @@ Correctness requires both to align. If backend state was derived from a differen
 ## Azure vs vLLM
 
 - Azure path currently approximates prefix savings by sending suffix-only requests on cache hit and tracking `tokens_sent`/`tokens_saved`.
-- vLLM path is designed for real KV reuse semantics: the same runtime prefix hit mechanism forwards backend state, and vLLM can avoid recomputing the shared prefix work.
+- vLLM path (also Ollama and any `/v1/completions` server when `VLLM_BASE_URL`
+  is set) always sends the full prompt. The server's own prefix cache (vLLM
+  automatic prefix caching) skips recomputing the shared prefix, and its
+  `cached_tokens` is reported as `tokens_saved`. The backend state handle
+  records which prefix the server holds warm. It is portable, so it survives a
+  checkpoint / resume, and `VLLM_REWARM_ON_IMPORT=1` re-warms the server after
+  a restart. See `benchmarks/reports/vllm-prefix-reuse.md`.
 
 Both paths emit the same runtime metrics so benchmark comparisons stay backend-agnostic.
+
+## Semantic tier
+
+The semantic tier (`SemanticCacheIndex`) returns a cached output when a new
+prompt is *close enough* to an earlier one, catching paraphrases the exact
+memo tier misses.
+
+**Key.** An entry matches a lookup only when all of these are equal: model id,
+cache namespace, and **embedder identity**. Candidates at or above
+`similarity_threshold` (default `0.85`) are then checked, best first, by the
+**hit verifier**, and the first one it accepts is served.
+
+**Hit verification.** Similarity says two prompts are about the same thing,
+not that they have the same answer: "enable" vs "disable" two-factor auth
+scores as high as a true paraphrase with every embedder we measured. So each
+`SemanticCacheIndex` runs a `HitVerifier` on candidates (entries and queries
+carry their prompt text for this):
+
+- `LexicalNearMissVerifier` (default) rejects minimal edits: different
+  numbers, a content word swapped with everything else unchanged, flipped
+  polarity ("to"/"from", "on"/"off", "with"/"without"), negation, and a
+  swapped direction ("miles to km" / "km to miles"). Rewordings pass.
+  It is deterministic, takes microseconds, and never serves those
+  near-misses, at the cost of also refusing paraphrases that differ by a
+  single synonym swap.
+- `continuum.verifiers.LLMJudgeVerifier(base_url, model)` asks a chat model
+  (Ollama, vLLM, OpenAI) whether both prompts have the same answer. It
+  handles synonyms and related-but-different questions, and costs one call
+  per candidate hit. Verdicts are cached per prompt pair.
+- Subclass `continuum._native.HitVerifier` for anything else;
+  `set_verifier(None)` disables verification. `verifier_rejections()` counts
+  refusals.
+
+**Where vectors come from.** A session embeds the concatenated string inputs
+of each `TokenOp` with its `EmbeddingProvider` (`Session.set_embedding_provider`).
+The provider is an interface (`embed(text)`, `dimension()`, `identity()`),
+implementable in C++ or by subclassing `continuum._native.EmbeddingProvider`
+in Python. `continuum.embeddings` ships:
+
+| Provider | Use |
+|----------|-----|
+| `WordLlamaEmbeddingProvider()` | **recommended**: local semantic model, no network, ~1 ms (`pip install "continuum-ai[semantic]"`) |
+| `CallableEmbeddingProvider(fn, dimension, identity)` | any local model, e.g. `SentenceTransformer(...).encode` |
+| `OpenAICompatibleEmbeddingProvider(base_url, model)` | a hosted `/v1/embeddings` endpoint (OpenAI, vLLM, Ollama) |
+| `PrecomputedEmbeddingProvider(vectors, identity)` | vectors computed ahead of time, for reproducible runs and evals |
+
+The built-in `BruteForceEmbeddingProvider(dim)` (identity
+`continuum/char-ngram-v1:<dim>`) hashes character n-grams. It is
+deterministic and dependency-free, which suits tests, but it is **not usable
+for semantic caching**: it rates unrelated English questions 0.6–0.85
+similar and serves their answers.
+
+**Measured starting point.** `WordLlamaEmbeddingProvider` with threshold
+`0.7` and the default verifier had zero false hits and zero wrong answers on
+a held-out test set; see `benchmarks/reports/semantic-false-hits.md` for
+recall, the other combinations, and the residual risks.
+
+```python
+from continuum._native import SemanticCacheIndex
+from continuum.embeddings import WordLlamaEmbeddingProvider
+
+session.set_semantic_cache(SemanticCacheIndex(2048, 0.7))
+session.set_embedding_provider(WordLlamaEmbeddingProvider())
+```
+
+**Why identity is in the key.** Cosine similarity between vectors from two
+different embedders is meaningless, and two embedders can even share a
+dimension. Storing `identity()` with each entry means changing the embedder
+(or its version) starts a fresh key space instead of producing silent false
+hits. Change the identity string whenever the vectors would change.
+
+**Reproducibility.** A run is reproducible when the embedder and verifier are
+deterministic and the identity pins the exact model and preprocessing. For
+evaluations, embed the dataset once and replay it through
+`PrecomputedEmbeddingProvider`.
+
+## Memory-graph recall tier
+
+`MemoryGraphStore` is a log of earlier prompts that the runtime searches for
+related context before each generation.
+
+**What it stores.** After a `TokenOp` runs on the backend, the interpreter adds
+one `MemoryNode` holding the concatenated string inputs (`content`), their
+embedding from the session's `EmbeddingProvider`, the node type (`Prompt`),
+and the session's cache namespace. Nodes get monotonically increasing ids.
+Nothing is stored when the step was served by the memo or semantic tier, when
+the step has no string inputs, or when no embedder is attached.
+
+**How recall triggers.** On every `TokenOp` with both a memory graph and an
+embedder attached, before calling the backend, the interpreter embeds the
+prompt and calls `retrieve_similar(query, max_results=5, min_similarity=0.7,
+namespace)`: a linear scan returning up to five nodes from the same namespace
+with cosine similarity >= 0.7, best first.
+
+**What recall does with the result.** Today, it logs it
+(`memory_recall ... related=N top_sim=...`). Recalled nodes are *not* added to
+the request, so the tier saves no tokens yet; it is an observable signal and
+the hook where context injection would go. Isolated measurements of recall
+quality and cost are in `benchmarks/reports/memory-graph-recall.md`: with the
+bundled n-gram embedder the top-1 hit is on topic, but the 0.7 cutoff filters
+almost nothing, so a semantic embedder is a prerequisite for injecting
+recalled context.
+
+**Invalidation.**
+
+- Namespace: recall never crosses cache namespaces.
+- Capacity: FIFO eviction by insertion (see below). Reads never refresh a node.
+- `clear()` drops every node and resets ids.
+- There is no model- or version-based invalidation: nodes are prompts, not
+  model outputs, so they stay valid when the model changes. Changing the
+  embedder *does* matter: vectors from different embedders are not
+  comparable, so clear the store when you switch embedders.
+
+## Eviction and memory bounds
+
+Every tier is bounded. Capacities are set at construction; a capacity of `0`
+stores nothing. Each tier reports `size()`, its capacity, and an
+`estimated_bytes()` figure, and `Session.cache_stats()` returns all three for
+every tier attached to a session:
+
+```python
+session.cache_stats()
+# {"prefix_kv": {"entries": 42, "capacity": 8192, "bytes": 13440},
+#  "memo": {...}, "semantic": {...}, "layer_kv": {...}, "memory_graph": {...}}
+```
+
+| Tier | Class | Bound | Policy | What refreshes recency |
+|------|-------|-------|--------|------------------------|
+| Prefix KV | `KVCacheIndex` | `max_entries` (per-depth trie entries) | LRU | `insert`, `longest_prefix` hit |
+| Memo | `MemoTable` | `max_entries` | LRU; stale versions dropped on lookup | `insert`, `lookup` hit |
+| Semantic | `SemanticCacheIndex` | `max_entries` | LRU | `insert`, above-threshold `lookup` |
+| Layer KV | `LayerKVCacheIndex` | `max_entries` **and** `max_bytes` | LRU until both bounds hold | `insert`, `find_deepest` hit |
+| Memory graph | `MemoryGraphStore` | `max_nodes` | FIFO by insertion | never (recall is a scan) |
+| Prefetch | `FutureCache` | `max_entries`, `ttl` | expired first, then FIFO | never |
+
+Byte accounting is approximate: it counts owned payloads (keys, cached
+outputs, embeddings, content strings) plus the fixed size of each entry
+struct. It does **not** count backend-owned state behind a
+`BackendState` handle (for example a real KV tensor); the layer tier instead
+uses the caller-supplied `LayerCheckpoint::estimated_bytes` and enforces
+`max_bytes` against that sum.
+
+The memory graph is FIFO rather than LRU on purpose: it is an append-only
+conversation log, and recall reads every node, so "recently read" carries no
+signal. Oldest-first keeps recent turns.
+
+The contract is pinned by `tests/python/test_cache_eviction.py`, which fills
+each tier past capacity and checks which entries survive.
 
 ## On-disk format versions
 

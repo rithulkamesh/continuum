@@ -1,0 +1,306 @@
+{
+ "description": "Test pairs: written after the validation set was used for diagnosis and before the final verifier rule was fixed; never used for tuning. Reported as the final result.",
+ "version": 1,
+ "pairs": [
+  {
+   "a": "how do I cancel my gym membership",
+   "b": "what's the process to end my gym membership",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is the boiling point of water",
+   "b": "at what temperature does water boil",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I rename a file in linux",
+   "b": "linux command to rename a file",
+   "label": "paraphrase"
+  },
+  {
+   "a": "who painted the Starry Night",
+   "b": "which artist created The Starry Night",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how can I improve my sleep",
+   "b": "tips for sleeping better",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is the speed of sound",
+   "b": "how fast does sound travel",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I install node on ubuntu",
+   "b": "installing node.js on an ubuntu machine",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what does a product manager do",
+   "b": "describe the role of a product manager",
+   "label": "paraphrase"
+  },
+  {
+   "a": "can I return shoes I already wore",
+   "b": "is it possible to return worn shoes",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I split a string in javascript",
+   "b": "javascript: split a string into parts",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what's a good name for a cat",
+   "b": "suggest a name for my cat",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how long should I boil an egg",
+   "b": "boiling time for an egg",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is inflation",
+   "b": "explain inflation in simple terms",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I find my ip address",
+   "b": "where can I see my IP address",
+   "label": "paraphrase"
+  },
+  {
+   "a": "is it going to rain tomorrow in Seattle",
+   "b": "will Seattle get rain tomorrow",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I transfer money to a friend",
+   "b": "send money to a friend, how",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what are the opening hours of the library",
+   "b": "when is the library open",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I make my resume stand out",
+   "b": "tips to make a resume more impressive",
+   "label": "paraphrase"
+  },
+  {
+   "a": "why is the sky blue",
+   "b": "what makes the sky look blue",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I back up my iphone",
+   "b": "backing up an iPhone, step by step",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I cancel my gym membership",
+   "b": "how do I freeze my gym membership",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is the boiling point of water",
+   "b": "what is the freezing point of water",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I rename a file in linux",
+   "b": "how do I delete a file in linux",
+   "label": "near_miss"
+  },
+  {
+   "a": "who painted the Starry Night",
+   "b": "who painted the Mona Lisa",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is the speed of sound",
+   "b": "what is the speed of light",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I install node on ubuntu",
+   "b": "how do I uninstall node on ubuntu",
+   "label": "near_miss"
+  },
+  {
+   "a": "can I return shoes I already wore",
+   "b": "can I exchange shoes I already wore",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I split a string in javascript",
+   "b": "how do I join a string in javascript",
+   "label": "near_miss"
+  },
+  {
+   "a": "how long should I boil an egg",
+   "b": "how long should I fry an egg",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I find my ip address",
+   "b": "how do I hide my ip address",
+   "label": "near_miss"
+  },
+  {
+   "a": "is it going to rain tomorrow in Seattle",
+   "b": "is it going to snow tomorrow in Seattle",
+   "label": "near_miss"
+  },
+  {
+   "a": "transfer 100 dollars to my savings",
+   "b": "transfer 1000 dollars to my savings",
+   "label": "near_miss"
+  },
+  {
+   "a": "what are the opening hours of the library",
+   "b": "what are the opening hours of the pool",
+   "label": "near_miss"
+  },
+  {
+   "a": "set an alarm for 7 am",
+   "b": "set an alarm for 8 am",
+   "label": "near_miss"
+  },
+  {
+   "a": "why is the sky blue",
+   "b": "why is the ocean blue",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I back up my iphone",
+   "b": "how do I back up my android phone",
+   "label": "near_miss"
+  },
+  {
+   "a": "convert celsius to fahrenheit",
+   "b": "convert fahrenheit to celsius",
+   "label": "near_miss"
+  },
+  {
+   "a": "is coffee good for you",
+   "b": "is coffee bad for you",
+   "label": "near_miss"
+  },
+  {
+   "a": "move the meeting to Tuesday",
+   "b": "move the meeting to Thursday",
+   "label": "near_miss"
+  },
+  {
+   "a": "show me hotels with a pool",
+   "b": "show me hotels without a pool",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I cancel my gym membership",
+   "b": "what is the atomic number of carbon",
+   "label": "unrelated"
+  },
+  {
+   "a": "what is the boiling point of water",
+   "b": "how do I center a div in css",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I rename a file in linux",
+   "b": "who won the first world cup",
+   "label": "unrelated"
+  },
+  {
+   "a": "who painted the Starry Night",
+   "b": "how do I file my taxes",
+   "label": "unrelated"
+  },
+  {
+   "a": "how can I improve my sleep",
+   "b": "what is the GDP of Brazil",
+   "label": "unrelated"
+  },
+  {
+   "a": "what is the speed of sound",
+   "b": "recommend a sci-fi movie",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I install node on ubuntu",
+   "b": "what do pandas eat",
+   "label": "unrelated"
+  },
+  {
+   "a": "what does a product manager do",
+   "b": "how do I fix a flat tire",
+   "label": "unrelated"
+  },
+  {
+   "a": "can I return shoes I already wore",
+   "b": "explain quantum computing",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I split a string in javascript",
+   "b": "what is the best pizza topping",
+   "label": "unrelated"
+  },
+  {
+   "a": "what's a good name for a cat",
+   "b": "how does a mortgage work",
+   "label": "unrelated"
+  },
+  {
+   "a": "how long should I boil an egg",
+   "b": "what is the largest ocean",
+   "label": "unrelated"
+  },
+  {
+   "a": "what is inflation",
+   "b": "how do I train for a marathon",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I find my ip address",
+   "b": "who is the author of Dune",
+   "label": "unrelated"
+  },
+  {
+   "a": "is it going to rain tomorrow in Seattle",
+   "b": "how do I make cold brew coffee",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I transfer money to a friend",
+   "b": "what is photosynthesis",
+   "label": "unrelated"
+  },
+  {
+   "a": "what are the opening hours of the library",
+   "b": "how many moons does Jupiter have",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I make my resume stand out",
+   "b": "what is a prime number",
+   "label": "unrelated"
+  },
+  {
+   "a": "why is the sky blue",
+   "b": "how do I reverse a linked list",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I back up my iphone",
+   "b": "what language is spoken in Brazil",
+   "label": "unrelated"
+  }
+ ]
+}

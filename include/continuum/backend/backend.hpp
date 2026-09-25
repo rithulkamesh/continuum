@@ -61,6 +61,14 @@ class BackendRegistry {
   };
 
   void register_backend(const std::string& name, std::shared_ptr<Backend> backend, int priority = 0);
+  /// Load a shared-library backend (see LoadBackendPlugin) and register it.
+  void load_plugin(const std::string& name, const std::string& path, int priority = 0);
+  /// Load every plugin listed in environment variable \p env_var
+  /// (format: see ParsePluginSpecs). Returns the number loaded; an unset or
+  /// empty variable loads nothing.
+  std::size_t load_plugins_from_env(const char* env_var = "CONTINUUM_BACKEND_PLUGINS");
+  /// Registered backend names, in no particular order.
+  std::vector<std::string> names() const;
   std::shared_ptr<Backend> get(const std::string& name) const;
   bool has(const std::string& name) const;
   /// Returns a backend that supports \p kind, or nullptr if none is registered.
@@ -71,6 +79,26 @@ class BackendRegistry {
   std::unordered_map<std::string, BackendSelection> backends_;
 };
 
+/// Wrap a C ABI vtable (v1 or v2) as a Backend. Throws on an unsupported
+/// `abi_version`.
 std::shared_ptr<Backend> MakeBackendFromAbi(continuum_backend_vtable_t vtable);
+
+/// `dlopen` / `LoadLibrary` \p path, resolve CONTINUUM_BACKEND_PLUGIN_INIT_SYMBOL,
+/// initialize it, and check the vtable's ABI version. The library stays
+/// loaded until the returned backend is destroyed. Throws std::runtime_error
+/// with the reason on any failure.
+std::shared_ptr<Backend> LoadBackendPlugin(const std::string& path);
+
+/// One entry of a plugin list.
+struct PluginSpec {
+  std::string name;
+  std::string path;
+  int priority = 0;
+};
+
+/// Parse `name[@priority]=path` entries separated by `;`, e.g.
+/// `echo@50=/opt/plugins/libecho.so;other=/x/libother.so`. Throws on a
+/// malformed entry.
+std::vector<PluginSpec> ParsePluginSpecs(const std::string& spec);
 
 }  // namespace continuum::backend

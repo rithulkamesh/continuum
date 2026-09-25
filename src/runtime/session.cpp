@@ -132,7 +132,8 @@ std::vector<continuum::Value> Session::run(
           }
           if (!prompt_text.empty()) {
             auto embedding = embedder_->embed(prompt_text);
-            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id, cache_namespace_);
+            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id, cache_namespace_,
+                                                     embedder_->identity(), prompt_text);
             if (sem_result.above_threshold) {
               semantic_hit = true;
               rec.semantic_hit = true;
@@ -178,10 +179,32 @@ std::vector<continuum::Value> Session::run(
   interp.set_layer_cache(layer_cache_);
   interp.set_memory_graph(memory_graph_);
   interp.set_cache_namespace(cache_namespace_);
+  interp.set_observer(observer_);
   results = interp.run(g, inputs);
   metrics_.run_count++;
 
   return results;
+}
+
+std::vector<CacheTierStats> Session::cache_stats() const {
+  std::vector<CacheTierStats> out;
+  out.push_back({"prefix_kv", cache_.size(), cache_.max_entries(), cache_.estimated_bytes()});
+  if (memo_table_ != nullptr) {
+    out.push_back({"memo", memo_table_->size(), memo_table_->max_entries(), memo_table_->estimated_bytes()});
+  }
+  if (semantic_cache_ != nullptr) {
+    out.push_back({"semantic", semantic_cache_->size(), semantic_cache_->max_entries(),
+                   semantic_cache_->estimated_bytes()});
+  }
+  if (layer_cache_ != nullptr) {
+    out.push_back({"layer_kv", layer_cache_->size(), layer_cache_->max_entries(),
+                   layer_cache_->estimated_bytes()});
+  }
+  if (memory_graph_ != nullptr) {
+    out.push_back({"memory_graph", memory_graph_->size(), memory_graph_->max_nodes(),
+                   memory_graph_->estimated_bytes()});
+  }
+  return out;
 }
 
 bool Session::save_cache_metadata(const std::string& path) const {

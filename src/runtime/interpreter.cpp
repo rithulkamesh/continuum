@@ -5,6 +5,7 @@
 #include <continuum/runtime/session.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -20,6 +21,23 @@
 
 namespace continuum::runtime {
 namespace {
+
+std::int64_t UnixNowNs() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+const char* NodeKindName(ir::NodeKind kind) {
+  switch (kind) {
+    case ir::NodeKind::TensorOp: return "TensorOp";
+    case ir::NodeKind::TokenOp: return "TokenOp";
+    case ir::NodeKind::PromptOp: return "PromptOp";
+    case ir::NodeKind::ToolOp: return "ToolOp";
+    case ir::NodeKind::ControlOp: return "ControlOp";
+  }
+  return "Unknown";
+}
 
 std::string CanonicalizeText(const std::string& raw) {
   std::string out;
@@ -301,6 +319,11 @@ std::vector<continuum::Value> Interpreter::resume(const Checkpoint& checkpoint) 
   return run_to_end();
 }
 
+const std::unordered_map<ir::NodeId, continuum::Value>& Interpreter::active_values() const {
+  static const std::unordered_map<ir::NodeId, continuum::Value> kEmpty;
+  return active_.has_value() ? active_->values : kEmpty;
+}
+
 std::vector<continuum::Value> Interpreter::run_to_end() {
   if (!active_.has_value()) {
     throw std::runtime_error("interpreter run_to_end: no active graph");
@@ -354,13 +377,63 @@ void Interpreter::advance_plan_cursor(ActiveExecution& state) {
   }
 }
 
+void Interpreter::emit_tier(const std::string& tier, std::int64_t start_ns, bool hit, std::int32_t tokens_saved,
+                            std::int32_t match_len, float similarity) {
+  if (observer_ == nullptr) return;
+  ReuseEvent e;
+  e.kind = ReuseEventKind::TierLookup;
+  e.tier = tier;
+  e.node_name = node_trace_.node_name;
+  e.node_kind = node_trace_.node_kind;
+  e.backend = node_trace_.backend;
+  e.model_id = node_trace_.model_id;
+  e.cache_namespace = cache_namespace_;
+  e.hit = hit;
+  e.similarity = similarity;
+  e.match_len = match_len;
+  e.total_tokens = node_trace_.total_tokens;
+  e.tokens_saved = tokens_saved;
+  e.start_unix_ns = start_ns;
+  e.end_unix_ns = UnixNowNs();
+  observer_->on_event(e);
+}
+
 continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuum::Value>& input_values) {
+  if (observer_ == nullptr) {
+    return step_impl(n, input_values);
+  }
+  node_trace_ = ReuseEvent{};
+  node_trace_.kind = ReuseEventKind::NodeExecution;
+  node_trace_.node_name = n.debug_name;
+  node_trace_.node_kind = NodeKindName(n.kind);
+  node_trace_.cache_namespace = cache_namespace_;
+  node_trace_.served_by = "passthrough";
+  node_trace_.start_unix_ns = UnixNowNs();
+  auto out = step_impl(n, input_values);
+  node_trace_.end_unix_ns = UnixNowNs();
+  observer_->on_event(node_trace_);
+  return out;
+}
+
+continuum::Value Interpreter::step_impl(const ir::Node& n, const std::vector<continuum::Value>& input_values) {
+  const bool tracing = observer_ != nullptr;
+  auto record_backend_run = [&](const std::string& backend_name, const backend::BackendRunResult& r) {
+    if (!tracing) return;
+    node_trace_.backend = backend_name;
+    node_trace_.served_by = "backend";
+    node_trace_.tokens_sent = r.tokens_sent;
+    node_trace_.tokens_saved = r.tokens_saved;
+    node_trace_.reused_prefix_len = r.reused_prefix_len;
+    node_trace_.compute_steps = r.compute_steps;
+    node_trace_.used_cached_state = r.used_cached_state;
+  };
   if (n.kind == ir::NodeKind::TensorOp) {
     auto selected = backends_.select_backend(n);
     const auto target_backend =
         selected.backend->tensor_backend_type().empty() ? selected.name : selected.backend->tensor_backend_type();
     auto normalized_inputs = NormalizeTensorInputs(input_values, target_backend);
     auto run_result = selected.backend->run_with_cache(n, normalized_inputs, std::nullopt, 0);
+    record_backend_run(selected.name, run_result);
     return run_result.output;
   }
   if (n.kind == ir::NodeKind::TokenOp) {
@@ -377,19 +450,32 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     const std::string model_id = payload == nullptr ? std::string{} : payload->model_id;
 
     const bool policy_allows_cache = (policy_ == nullptr || policy_->kind != ReusePolicyKind::Never);
+    const auto total_tokens = static_cast<std::int32_t>(input_tokens.size());
+    if (tracing) {
+      node_trace_.backend = key;
+      node_trace_.model_id = model_id;
+      node_trace_.total_tokens = total_tokens;
+    }
 
     // --- v1.1: MemoTable lookup (deterministic exact match) ---
     if (policy_allows_cache && memo_table_ != nullptr && payload != nullptr) {
+      const auto t0 = tracing ? UnixNowNs() : 0;
       auto memo_key = memo_table_->make_key(n, input_values, cache_namespace_);
       auto memo_hit = memo_table_->lookup(memo_key);
+      std::optional<continuum::Value> memo_value;
       if (memo_hit.has_value()) {
-        auto memo_value = MemoTable::deserialize_value(memo_hit->output_bytes);
-        if (memo_value.has_value()) {
-          LOG_INFO(runtime,
-                   "memo_hit backend={} model={} node={}",
-                   key, model_id, n.debug_name);
-          return std::move(*memo_value);
+        memo_value = MemoTable::deserialize_value(memo_hit->output_bytes);
+      }
+      emit_tier("memo", t0, memo_value.has_value(), memo_value.has_value() ? total_tokens : 0);
+      if (memo_value.has_value()) {
+        LOG_INFO(runtime,
+                 "memo_hit backend={} model={} node={}",
+                 key, model_id, n.debug_name);
+        if (tracing) {
+          node_trace_.served_by = "memo";
+          node_trace_.tokens_saved = total_tokens;
         }
+        return std::move(*memo_value);
       }
     }
 
@@ -400,16 +486,25 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
         if (const auto* s = std::get_if<std::string>(&v)) prompt_text += *s;
       }
       if (!prompt_text.empty()) {
+        const auto t0 = tracing ? UnixNowNs() : 0;
         auto embedding = embedder_->embed(prompt_text);
-        auto sem_result = semantic_cache_->lookup(embedding, model_id, cache_namespace_);
+        auto sem_result =
+            semantic_cache_->lookup(embedding, model_id, cache_namespace_, embedder_->identity(), prompt_text);
+        std::optional<continuum::Value> sem_value;
         if (sem_result.above_threshold && !sem_result.output.empty()) {
-          auto sem_value = MemoTable::deserialize_value(sem_result.output);
-          if (sem_value.has_value()) {
-            LOG_INFO(runtime,
-                     "semantic_hit backend={} model={} node={} similarity={:.4f}",
-                     key, model_id, n.debug_name, sem_result.similarity);
-            return std::move(*sem_value);
+          sem_value = MemoTable::deserialize_value(sem_result.output);
+        }
+        emit_tier("semantic", t0, sem_value.has_value(), sem_value.has_value() ? total_tokens : 0, 0,
+                  sem_result.similarity);
+        if (sem_value.has_value()) {
+          LOG_INFO(runtime,
+                   "semantic_hit backend={} model={} node={} similarity={:.4f}",
+                   key, model_id, n.debug_name, sem_result.similarity);
+          if (tracing) {
+            node_trace_.served_by = "semantic";
+            node_trace_.tokens_saved = total_tokens;
           }
+          return std::move(*sem_value);
         }
       }
     }
@@ -418,6 +513,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     std::optional<continuum::runtime::CacheEntry> cache_hit;
     std::int32_t prefix_len = 0;
     if (policy_allows_cache && payload != nullptr && !input_tokens.empty()) {
+      const auto t0 = tracing ? UnixNowNs() : 0;
       auto hit = cache_.longest_prefix(model_id, decode_params, input_tokens, cache_namespace_);
       if (hit.has_value()) {
         const std::int32_t hit_len = std::min<std::int32_t>(hit->second, static_cast<std::int32_t>(input_tokens.size()));
@@ -426,6 +522,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
           prefix_len = hit_len;
         }
       }
+      emit_tier("prefix_kv", t0, cache_hit.has_value(), prefix_len, prefix_len);
     }
     // --- v1.1: LayerKVCacheIndex deep warm-start (fallback when trie misses) ---
     std::optional<backend::BackendState> layer_state;
@@ -433,10 +530,13 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
     if (layer_cache_ != nullptr && payload != nullptr) {
       decode_hash = DecodeHash(*payload);
       if (policy_allows_cache && !cache_hit.has_value()) {
+        const auto t0 = tracing ? UnixNowNs() : 0;
         auto layer_hit = layer_cache_->find_deepest(
             model_id, decode_hash, input_tokens,
             /*total_layers=*/std::numeric_limits<std::int32_t>::max(), /*arch_version=*/0,
             cache_namespace_);
+        emit_tier("layer_kv", t0, layer_hit.found, layer_hit.found ? layer_hit.prefix_len : 0,
+                  layer_hit.found ? layer_hit.prefix_len : 0);
         if (layer_hit.found) {
           layer_state = layer_hit.state;
           prefix_len = layer_hit.prefix_len;
@@ -474,8 +574,12 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
         if (const auto* s = std::get_if<std::string>(&v)) mem_prompt += *s;
       }
       if (!mem_prompt.empty()) {
+        const auto t0 = tracing ? UnixNowNs() : 0;
         mem_embedding = embedder_->embed(mem_prompt);
         auto related = memory_graph_->retrieve_similar(mem_embedding, 5, 0.7f, cache_namespace_);
+        // Recall is observational: it never saves tokens (see docs/design/cache.md).
+        emit_tier("memory_graph", t0, !related.empty(), 0, static_cast<std::int32_t>(related.size()),
+                  related.empty() ? 0.0f : related.front().similarity);
         if (!related.empty()) {
           LOG_INFO(runtime,
                    "memory_recall backend={} model={} related={} top_sim={:.4f}",
@@ -489,6 +593,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
           cache_hit.has_value() ? std::optional<backend::BackendState>{cache_hit->backend_state}
                                 : layer_state;
       auto run_result = selected.backend->run_with_cache(n, input_values, prefix_state, remaining_tokens);
+      record_backend_run(key, run_result);
       auto out = run_result.output;
       if (payload != nullptr) {
         // Invariant: cache_prefix_len must align with canonical input token count, or later prefix hits become invalid.
@@ -536,7 +641,8 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
             auto embedding = embedder_->embed(prompt_text);
             auto output_bytes = MemoTable::serialize_value(out);
             if (!output_bytes.empty()) {
-              semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_);
+              semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_,
+                                      embedder_->identity(), prompt_text);
             }
           }
         }
@@ -586,7 +692,9 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
       memo_table_->invalidate_node("ToolOp");
     }
     if (backends_.has("default")) {
-      return backends_.get("default")->run_with_cache(n, input_values, std::nullopt, 0).output;
+      auto run_result = backends_.get("default")->run_with_cache(n, input_values, std::nullopt, 0);
+      record_backend_run("default", run_result);
+      return run_result.output;
     }
     return input_values.empty() ? continuum::Value{std::string{}} : input_values.back();
   }

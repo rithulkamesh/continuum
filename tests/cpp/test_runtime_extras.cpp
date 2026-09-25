@@ -1,5 +1,6 @@
 #include <continuum/backend/fake_llm.hpp>
 #include <continuum/backend/libtorch.hpp>
+#include <continuum/backend/vllm_shim.hpp>
 #include <continuum/ir/graph.hpp>
 #include <continuum/ir/node.hpp>
 #include <continuum/runtime/checkpoint.hpp>
@@ -9,6 +10,7 @@
 #include <continuum/runtime/memory_graph.hpp>
 #include <continuum/runtime/scheduler.hpp>
 #include <continuum/runtime/semantic_cache.hpp>
+#include <continuum/runtime/session.hpp>
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -227,4 +229,169 @@ TEST(MemoryGraphTest, InsertAndRetrieveSimilar) {
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits.front().node.content, "hello");
   EXPECT_TRUE(store.retrieve_similar({0.0f, 1.0f}, 3, 0.99f).empty());
+}
+
+TEST(EvictionTest, SemanticLookupRefreshesLru) {
+  continuum::runtime::SemanticCacheIndex sc(2, 0.99f);
+  sc.insert({1.0f, 0.0f, 0.0f}, "m", {1});
+  sc.insert({0.0f, 1.0f, 0.0f}, "m", {2});
+  ASSERT_TRUE(sc.lookup({1.0f, 0.0f, 0.0f}, "m").above_threshold);
+  sc.insert({0.0f, 0.0f, 1.0f}, "m", {3});
+  EXPECT_EQ(sc.size(), 2u);
+  EXPECT_TRUE(sc.lookup({1.0f, 0.0f, 0.0f}, "m").above_threshold);
+  EXPECT_FALSE(sc.lookup({0.0f, 1.0f, 0.0f}, "m").above_threshold);
+  EXPECT_GT(sc.estimated_bytes(), 0u);
+}
+
+TEST(EvictionTest, MemoryGraphIsFifo) {
+  continuum::runtime::MemoryGraphStore store(2);
+  continuum::runtime::MemoryNode n;
+  n.embedding = {1.0f};
+  const auto first = store.add_node(n);
+  const auto second = store.add_node(n);
+  store.add_node(n);
+  EXPECT_EQ(store.size(), 2u);
+  EXPECT_FALSE(store.get_node(first).has_value());
+  EXPECT_TRUE(store.get_node(second).has_value());
+  EXPECT_GT(store.estimated_bytes(), 0u);
+
+  continuum::runtime::MemoryGraphStore empty(0);
+  empty.add_node(n);
+  EXPECT_EQ(empty.size(), 0u);
+}
+
+TEST(EvictionTest, SessionReportsTierStats) {
+  continuum::backend::BackendRegistry registry;
+  continuum::runtime::Session session("s", registry, 4);
+  continuum::runtime::MemoTable memo(3, 0);
+  session.set_memo_table(&memo);
+  const auto stats = session.cache_stats();
+  ASSERT_EQ(stats.size(), 2u);
+  EXPECT_EQ(stats[0].tier, "prefix_kv");
+  EXPECT_EQ(stats[0].capacity, 4u);
+  EXPECT_EQ(stats[1].tier, "memo");
+  EXPECT_EQ(stats[1].capacity, 3u);
+}
+
+TEST(VllmShimTest, ExtractJsonStringDecodesEscapes) {
+  using continuum::backend::VllmShimBackend;
+  const std::string body =
+      R"({"choices":[{"index":0,"text":"a\nb \"q\" \\ ✓ 😀 \/"}],)"
+      R"("usage":{"prompt_tokens_details":{"cached_tokens": 42}}})";
+  EXPECT_EQ(VllmShimBackend::ExtractJsonString(body, "text"),
+            "a\nb \"q\" \\ \xE2\x9C\x93 \xF0\x9F\x98\x80 /");
+  EXPECT_EQ(VllmShimBackend::ExtractJsonInt(body, "cached_tokens"), 42);
+  EXPECT_EQ(VllmShimBackend::ExtractJsonString(body, "missing"), "");
+  EXPECT_EQ(VllmShimBackend::ExtractJsonInt(body, "missing"), 0);
+}
+
+TEST(CheckpointDeltaTest, RoundTripsValuesAndCache) {
+  continuum::runtime::Checkpoint base;
+  base.serialized_graph = {1, 2, 3};
+  base.current_node_index = 2;
+  base.value_map[1] = std::string{"a"};
+  base.value_map[2] = std::string{"b"};
+  continuum::runtime::CheckpointCacheEntry e;
+  e.model_id = "m";
+  e.tokens = {1, 2};
+  e.prefix_len = 2;
+  e.state_bytes = {7};
+  base.cache_snapshot.push_back(e);
+
+  continuum::runtime::Checkpoint next = base;
+  next.current_node_index = 4;
+  next.value_map[2] = std::string{"changed"};
+  next.value_map.erase(1);
+  next.value_map[3] = std::int64_t{42};
+  next.cache_snapshot[0].state_bytes = {8};
+  e.tokens = {3};
+  next.cache_snapshot.push_back(e);
+  next.serialized_graph = {9};
+
+  const auto delta = continuum::runtime::serialize_checkpoint_delta(base, next);
+  EXPECT_TRUE(continuum::runtime::is_checkpoint_delta(delta));
+  const auto rebuilt = continuum::runtime::apply_checkpoint_delta(base, delta);
+  EXPECT_EQ(continuum::runtime::serialize_checkpoint(rebuilt), continuum::runtime::serialize_checkpoint(next));
+
+  const auto same = continuum::runtime::serialize_checkpoint_delta(base, base);
+  EXPECT_LT(same.size(), 64u);
+  EXPECT_THROW(continuum::runtime::apply_checkpoint_delta(base, {1, 2, 3, 4, 5, 6}), std::runtime_error);
+  auto truncated = delta;
+  truncated.pop_back();
+  EXPECT_THROW(continuum::runtime::apply_checkpoint_delta(base, truncated), std::runtime_error);
+  EXPECT_FALSE(continuum::runtime::is_checkpoint_delta(continuum::runtime::serialize_checkpoint(base)));
+}
+
+namespace {
+class CountingObserver : public continuum::runtime::ReuseObserver {
+ public:
+  void on_event(const continuum::runtime::ReuseEvent& e) override { events.push_back(e); }
+  std::vector<continuum::runtime::ReuseEvent> events;
+};
+}  // namespace
+
+TEST(ObserverTest, EmitsTierAndNodeEvents) {
+  continuum::backend::BackendRegistry registry;
+  registry.register_backend("fake", std::make_shared<continuum::backend::FakeLLMBackend>(), 10);
+  continuum::runtime::Session session("obs", registry);
+  continuum::runtime::MemoTable memo(8, 0);
+  session.set_memo_table(&memo);
+  CountingObserver obs;
+  session.set_observer(&obs);
+
+  Graph g;
+  Node p;
+  p.kind = NodeKind::PromptOp;
+  const NodeId pid = g.add_node(p);
+  Node t;
+  t.kind = NodeKind::TokenOp;
+  t.payload = continuum::ir::TokenOpPayload{"generate", "m", 0.0f, 4};
+  t.inputs.push_back(pid);
+  g.add_node(t);
+  std::unordered_map<NodeId, continuum::Value> inputs{{pid, std::string{"hi"}}};
+
+  session.run(g, inputs);
+  session.run(g, inputs);
+  ASSERT_EQ(obs.events.size(), 5u);  // run 1: memo, prefix_kv, node; run 2: memo hit, node
+  EXPECT_EQ(obs.events[0].tier, "memo");
+  EXPECT_FALSE(obs.events[0].hit);
+  EXPECT_EQ(obs.events[1].tier, "prefix_kv");
+  EXPECT_EQ(obs.events[2].kind, continuum::runtime::ReuseEventKind::NodeExecution);
+  EXPECT_EQ(obs.events[2].served_by, "backend");
+  EXPECT_EQ(obs.events[2].backend, "fake");
+  EXPECT_TRUE(obs.events[3].hit);
+  EXPECT_EQ(obs.events[4].served_by, "memo");
+  EXPECT_GE(obs.events[4].end_unix_ns, obs.events[4].start_unix_ns);
+
+  session.set_observer(nullptr);
+  session.run(g, inputs);
+  EXPECT_EQ(obs.events.size(), 5u);
+}
+
+TEST(HitVerifierTest, LexicalRulesAndIndexFallback) {
+  using continuum::runtime::LexicalNearMissVerifier;
+  EXPECT_EQ(LexicalNearMissVerifier::explain("how do I reset my password", "how do I reset my username").reason,
+            "substitution");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("book 3 nights", "book 2 nights").reason, "numbers");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("turn on alerts", "turn off alerts").reason, "polarity");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("is it open", "isn't it open").reason, "negation");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("convert 10 miles to km", "convert 10 km to miles").reason,
+            "direction");
+  EXPECT_TRUE(LexicalNearMissVerifier::explain("how do I reset my password",
+                                               "I forgot my password and need to reset it").accept);
+
+  continuum::runtime::SemanticCacheIndex idx(8, 0.9f);
+  idx.insert({1.0f, 0.0f}, "m", {1}, "", "", "how do I reset my username");
+  idx.insert({0.97f, 0.243f}, "m", {2}, "", "", "how do I reset my password");
+  const auto r = idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password");
+  ASSERT_TRUE(r.above_threshold);
+  EXPECT_EQ(r.output, std::vector<std::uint8_t>{2});
+  EXPECT_EQ(r.verifier_rejections, 1);
+  // Cached verdict: the same lookup does not re-run the verifier, and still refuses.
+  EXPECT_EQ(idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password").output,
+            std::vector<std::uint8_t>{2});
+  EXPECT_EQ(idx.verifier_rejections(), 2);
+  idx.set_verifier(nullptr);
+  EXPECT_EQ(idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password").output,
+            std::vector<std::uint8_t>{1});
 }

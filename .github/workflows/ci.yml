@@ -50,6 +50,68 @@ jobs:
           cmake --build build-tests -j 2
       - name: Run ctest
         run: ctest --test-dir build-tests --output-on-failure
+      - name: Build the example plugin from the public header only
+        run: |
+          cmake -S examples/plugins/echo_backend -B build-echo
+          cmake --build build-echo
+
+  mlx-macos-arm64:
+    # MLX-tagged suite on Apple silicon (macos-14 runners are arm64), built
+    # against Apple MLX from the `mlx` wheel.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require arm64
+        run: test "$(uname -m)" = arm64
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install "mlx>=0.25"
+      - name: Build and run the MLX C++ suite
+        run: |
+          cmake -S . -B build-mlx \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCONTINUUM_BUILD_TESTS=ON \
+            -DCONTINUUM_BUILD_PYTHON=OFF \
+            -DCONTINUUM_USE_MLX=ON \
+            -DCONTINUUM_WERROR=ON
+          cmake --build build-mlx -j 3
+          ctest --test-dir build-mlx -R '^MLX' --output-on-failure
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e .
+      - name: MLX conformance and libtorch parity
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: |
+          python -c "from continuum._native import mlx_runtime as r; print(r()); assert r().startswith('mlx ')"
+          python -m continuum.backend_check mlx
+          python examples/09_hybrid_tensor_token.py
+
+  langchain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e .
+      - run: pip install -e "integrations/langchain[test]" "ruff>=0.15,<0.16"
+      - run: ruff check integrations/langchain
+      - run: pytest integrations/langchain/tests -q
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+      - name: Examples (FakeLLM backend)
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: |
+          python integrations/langchain/examples/cache_example.py
+          python integrations/langchain/examples/langgraph_checkpoint_example.py
 
   cpp-coverage:
     runs-on: ubuntu-latest
@@ -99,3 +161,41 @@ jobs:
       - run: pip install sphinx furo breathe
       - run: sphinx-build -b html docs/api/python docs/api/python/_build
       - run: doxygen docs/Doxyfile
+
+  ollama-e2e:
+    # Real Ollama on the runner: DurableAgent, the proxy (via the openai SDK),
+    # the semantic tier on Ollama embeddings, and prefix reuse. Small models
+    # keep it CPU-friendly.
+    runs-on: ubuntu-latest
+    env:
+      OLLAMA_CHAT_MODEL: smollm2:135m
+      OLLAMA_EMBED_MODEL: all-minilm
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install scikit-build-core pybind11
+      - run: pip install --no-build-isolation -e ".[test]"
+      - name: Install and start Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          (ollama serve > /tmp/ollama.log 2>&1 &) || true
+          for i in $(seq 1 30); do curl -sf http://localhost:11434/api/tags && break; sleep 1; done
+          ollama pull "$OLLAMA_CHAT_MODEL"
+          ollama pull "$OLLAMA_EMBED_MODEL"
+          ollama list
+      - name: End-to-end checks against Ollama
+        env:
+          CONTINUUM_LOG_LEVEL: warn
+        run: >
+          python scripts/ollama_e2e.py --model "$OLLAMA_CHAT_MODEL"
+          --embed-model "$OLLAMA_EMBED_MODEL" --json ollama-e2e.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ollama-e2e
+          path: ollama-e2e.json

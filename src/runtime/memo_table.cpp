@@ -168,6 +168,18 @@ std::size_t MemoTable::size() const {
   return table_.size();
 }
 
+std::size_t MemoTable::estimated_bytes() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::size_t total = 0;
+  for (const auto& [key, entry] : table_) {
+    total += sizeof(MemoKey) + sizeof(MemoEntry);
+    total += key.node_kind_str.size() + key.payload_hash.size() + key.inputs_hash.size() +
+             key.cache_namespace.size();
+    total += entry.output_bytes.size();
+  }
+  return total;
+}
+
 std::size_t MemoTable::version() const {
   return version_;
 }

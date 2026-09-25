@@ -6,6 +6,8 @@
   use, what you can build, and why it is a runtime rather than a wrapper.
 - [benchmarks.md](benchmarks.md): measured results, methodology, and the
   scripts behind every number.
+- [integrations.md](integrations.md): the OpenAI-compatible proxy, the
+  LangChain / LangGraph adapters, and Python backends.
 - [building-docs.md](building-docs.md): build the hosted API docs locally.
 
 ## Design

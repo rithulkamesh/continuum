@@ -3,7 +3,13 @@
 # (include/continuum/ir/value.hpp and others) include <torch/...>, and
 # CMakeLists.txt runs `import torch` to locate libtorch's CMake package.
 # It must therefore be present in the build environment.
-requires = ["scikit-build-core>=0.9", "pybind11>=2.11", "torch>=2.2"]
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.11",
+  "torch>=2.2",
+  # Apple silicon builds the mlx tensor backend against Apple MLX (Metal).
+  "mlx>=0.25; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -12,7 +18,10 @@ version = "1.0.0"
 description = "Unified runtime for token + tensor program execution across LLM and ML backends"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.2"]
+dependencies = [
+  "torch>=2.2",
+  "mlx>=0.25; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 license = { file = "LICENSE" }
 authors = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 classifiers = [
@@ -29,7 +38,14 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.15,<0.16", "mypy>=1.10", "hypothesis>=6"]
 docs = ["sphinx>=7.4", "furo>=2024.7.18", "breathe>=4.35.0"]
-test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6"]
+test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6", "opentelemetry-sdk>=1.20", "openai>=1.40", "wordllama>=0.3"]
+# Local semantic embedder for the semantic tier (WordLlamaEmbeddingProvider).
+semantic = ["wordllama>=0.3"]
+# OpenTelemetry export (continuum.telemetry).
+otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
+# Checkpoint stores (continuum.checkpoints.S3Store / GCSStore).
+s3 = ["boto3>=1.35"]
+gcs = ["google-cloud-storage>=2.10"]
 
 [project.urls]
 Homepage = "https://github.com/rithulkamesh/continuum"

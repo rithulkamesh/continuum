@@ -10,6 +10,11 @@ from __future__ import annotations
 
 try:
     import torch as _torch  # noqa: F401  loads libtorch before the extension
+
+    try:  # loads libmlx when the extension was built against Apple MLX
+        import mlx.core as _mlx_core  # noqa: F401
+    except ImportError:
+        pass
     from . import _continuum as _c  # type: ignore[attr-defined]
 except Exception as _exc:  # pragma: no cover - only hit on a broken install
     import importlib.util as _ilu
@@ -36,21 +41,30 @@ Graph = _ir.Graph
 
 # --- Backends -----------------------------------------------------------
 BackendRegistry = _backend.BackendRegistry
+check_backend = _backend.check_backend
+mlx_runtime = _backend.mlx_runtime
 
 # --- Runtime core -----------------------------------------------------
 GraphBuilder = _rt.GraphBuilder
 Interpreter = _rt.Interpreter
 DurableAgent = _rt.DurableAgent
 eager_step = _rt.eager_step
+checkpoint_delta = _rt.checkpoint_delta
+apply_checkpoint_delta = _rt.apply_checkpoint_delta
+is_checkpoint_delta = _rt.is_checkpoint_delta
 run_tensor_op = _rt.run_tensor_op
 train_classifier_demo = _rt.train_classifier_demo
 
 # --- Reuse subsystems -------------------------------------------------
 Session = _rt.Session
+KVCacheIndex = _rt.KVCacheIndex
 ReusePolicy = _rt.ReusePolicy
 ReusePolicyKind = _rt.ReusePolicyKind
 ReuseMetrics = _rt.ReuseMetrics
 ReuseStepRecord = _rt.ReuseStepRecord
+ReuseEvent = _rt.ReuseEvent
+ReuseEventKind = _rt.ReuseEventKind
+ReuseObserver = _rt.ReuseObserver
 MemoTable = _rt.MemoTable
 MemoKey = _rt.MemoKey
 SemanticCacheIndex = _rt.SemanticCacheIndex
@@ -58,6 +72,8 @@ MemoryGraphStore = _rt.MemoryGraphStore
 LayerKVCacheIndex = _rt.LayerKVCacheIndex
 FutureCache = _rt.FutureCache
 EmbeddingProvider = _rt.EmbeddingProvider
+HitVerifier = _rt.HitVerifier
+LexicalNearMissVerifier = _rt.LexicalNearMissVerifier
 BruteForceEmbeddingProvider = _rt.BruteForceEmbeddingProvider
 
 # --- Benchmark entrypoints ----------------------------------------
@@ -79,17 +95,26 @@ __all__ = [
     "Node",
     "Graph",
     "BackendRegistry",
+    "check_backend",
+    "mlx_runtime",
     "GraphBuilder",
     "Interpreter",
     "DurableAgent",
     "eager_step",
+    "checkpoint_delta",
+    "apply_checkpoint_delta",
+    "is_checkpoint_delta",
     "run_tensor_op",
     "train_classifier_demo",
     "Session",
+    "KVCacheIndex",
     "ReusePolicy",
     "ReusePolicyKind",
     "ReuseMetrics",
     "ReuseStepRecord",
+    "ReuseEvent",
+    "ReuseEventKind",
+    "ReuseObserver",
     "MemoTable",
     "MemoKey",
     "SemanticCacheIndex",
@@ -97,6 +122,8 @@ __all__ = [
     "LayerKVCacheIndex",
     "FutureCache",
     "EmbeddingProvider",
+    "HitVerifier",
+    "LexicalNearMissVerifier",
     "BruteForceEmbeddingProvider",
     "benchmark_azure_agent",
     "benchmark_vllm_agent",

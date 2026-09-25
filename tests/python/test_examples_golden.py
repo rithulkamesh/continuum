@@ -53,10 +53,12 @@ def test_durable_agent_example_resumes_after_crash() -> None:
     assert "durable agent: OK" in out
 
 
-def test_time_travel_fork_example_diverges_only_at_edit() -> None:
+def test_time_travel_fork_example_cascades_from_edit() -> None:
     out = _run("03_time_travel_fork.py")
-    assert "divergence: 2/8 node outputs differ" in out
-    assert "replay check: completed steps identical, only the edit diverged" in out
+    assert "on the fake backend" in out
+    # Edited step-3 prompt, its generation, and the step-4 generation.
+    assert "divergence: 3/8 node outputs differ" in out
+    assert "replay check: completed steps identical, the edit cascaded downstream" in out
     assert "time-travel fork: OK" in out
 
 
