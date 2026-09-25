@@ -52,6 +52,7 @@ from typing import Any
 from continuum._native import (
     BackendRegistry,
     EmbeddingProvider,
+    HitVerifier,
     KVCacheIndex,
     MemoTable,
     ReuseEvent,
@@ -88,7 +89,11 @@ class ProxyConfig:
         semantic_threshold: Enables the semantic tier at this similarity when
             set. Off by default: see ``benchmarks/reports/semantic-false-hits.md``
             before enabling it, and pass a real ``embedder``.
-        embedder: Embedding provider for the semantic tier.
+        embedder: Embedding provider for the semantic tier
+            (``WordLlamaEmbeddingProvider`` with threshold 0.7 is the measured
+            starting point).
+        verifier: Hit verifier for semantic candidates; ``None`` keeps the
+            engine default (``LexicalNearMissVerifier``).
         timeout: Upstream timeout in seconds.
     """
 
@@ -99,6 +104,7 @@ class ProxyConfig:
     semantic_threshold: float | None = None
     semantic_entries: int = 2048
     embedder: EmbeddingProvider | None = None
+    verifier: HitVerifier | None = None
     timeout: float = 600.0
 
 
@@ -395,6 +401,8 @@ class ContinuumProxy:
             self.semantic = SemanticCacheIndex(
                 self.config.semantic_entries, self.config.semantic_threshold
             )
+            if self.config.verifier is not None:
+                self.semantic.set_verifier(self.config.verifier)
         self._local = threading.local()
         self._observer = _EventSink(self)
         proxy = self
@@ -687,24 +695,44 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="enable the semantic tier (needs --embed-model)",
     )
-    ap.add_argument("--embed-model", help="embedding model on the upstream for the semantic tier")
+    ap.add_argument(
+        "--embed-model",
+        help="semantic-tier embedder: 'wordllama' (local, recommended) or a model on the upstream",
+    )
+    ap.add_argument(
+        "--judge-model", help="chat model on the upstream used as an LLM-judge hit verifier"
+    )
     args = ap.parse_args(argv)
 
-    embedder = None
+    embedder: EmbeddingProvider | None = None
+    verifier: HitVerifier | None = None
     if args.semantic_threshold is not None:
         if not args.embed_model:
             ap.error("--semantic-threshold needs --embed-model")
-        from continuum.embeddings import OpenAICompatibleEmbeddingProvider
+        from continuum.embeddings import (
+            OpenAICompatibleEmbeddingProvider,
+            WordLlamaEmbeddingProvider,
+        )
 
         upstream = args.upstream.rstrip("/")
         base = upstream[: -len("/v1")] if upstream.endswith("/v1") else upstream
-        embedder = OpenAICompatibleEmbeddingProvider(base, args.embed_model, api_key=args.api_key)
+        if args.embed_model == "wordllama":
+            embedder = WordLlamaEmbeddingProvider()
+        else:
+            embedder = OpenAICompatibleEmbeddingProvider(
+                base, args.embed_model, api_key=args.api_key
+            )
+        if args.judge_model:
+            from continuum.verifiers import LLMJudgeVerifier
+
+            verifier = LLMJudgeVerifier(base, args.judge_model, api_key=args.api_key)
     config = ProxyConfig(
         upstream=args.upstream,
         api_key=args.api_key,
         memo_entries=args.memo_entries,
         semantic_threshold=args.semantic_threshold,
         embedder=embedder,
+        verifier=verifier,
     )
     proxy = ContinuumProxy(config, host=args.host, port=args.port)
     print(f"continuum proxy on {proxy.address}/v1 -> {config.upstream}", flush=True)

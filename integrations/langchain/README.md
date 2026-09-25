@@ -14,14 +14,16 @@ from langchain_core.globals import set_llm_cache
 from continuum_langchain import ContinuumCache
 
 set_llm_cache(ContinuumCache())                               # memo tier (exact repeats)
-# set_llm_cache(ContinuumCache(semantic_threshold=0.92, embedder=my_embedder))
+# set_llm_cache(ContinuumCache(semantic_threshold=0.7, embedder=WordLlamaEmbeddingProvider()))
 ```
 
 - Exact repeats (same prompt, same model configuration) hit Continuum's memo
   tier, which is LRU-bounded (`memo_entries`).
-- The semantic tier is opt-in and needs a real embedder
-  (`continuum.embeddings`). Measure its false-hit rate on your traffic first:
-  `benchmarks/scripts/e9_semantic_false_hits.py`.
+- The semantic tier is opt-in. The measured starting point is
+  `WordLlamaEmbeddingProvider()` (local; `continuum-ai[semantic]`) at
+  threshold 0.7. Every candidate passes the engine's near-miss hit verifier;
+  pass `verifier=LLMJudgeVerifier(...)` for an LLM judge. See
+  `benchmarks/reports/semantic-false-hits.md`.
 - **Tool calls are never cached**: neither responses that contain tool calls
   nor calls from models bound to tools.
 - `cache.stats` counts memo hits, semantic hits, misses, and skipped tool calls.

@@ -72,6 +72,8 @@ MemoryGraphStore = _rt.MemoryGraphStore
 LayerKVCacheIndex = _rt.LayerKVCacheIndex
 FutureCache = _rt.FutureCache
 EmbeddingProvider = _rt.EmbeddingProvider
+HitVerifier = _rt.HitVerifier
+LexicalNearMissVerifier = _rt.LexicalNearMissVerifier
 BruteForceEmbeddingProvider = _rt.BruteForceEmbeddingProvider
 
 # --- Benchmark entrypoints ----------------------------------------
@@ -120,6 +122,8 @@ __all__ = [
     "LayerKVCacheIndex",
     "FutureCache",
     "EmbeddingProvider",
+    "HitVerifier",
+    "LexicalNearMissVerifier",
     "BruteForceEmbeddingProvider",
     "benchmark_azure_agent",
     "benchmark_vllm_agent",

@@ -38,7 +38,9 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.15,<0.16", "mypy>=1.10", "hypothesis>=6"]
 docs = ["sphinx>=7.4", "furo>=2024.7.18", "breathe>=4.35.0"]
-test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6", "opentelemetry-sdk>=1.20", "openai>=1.40"]
+test = ["pytest>=8", "pytest-cov>=5.0", "hypothesis>=6", "opentelemetry-sdk>=1.20", "openai>=1.40", "wordllama>=0.3"]
+# Local semantic embedder for the semantic tier (WordLlamaEmbeddingProvider).
+semantic = ["wordllama>=0.3"]
 # OpenTelemetry export (continuum.telemetry).
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 # Checkpoint stores (continuum.checkpoints.S3Store / GCSStore).

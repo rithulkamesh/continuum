@@ -47,37 +47,61 @@ prompt is *close enough* to an earlier one, catching paraphrases the exact
 memo tier misses.
 
 **Key.** An entry matches a lookup only when all of these are equal: model id,
-cache namespace, and **embedder identity**. Among matching entries the highest
-cosine similarity wins, and it is served only if it is at least
-`similarity_threshold` (default `0.85`).
+cache namespace, and **embedder identity**. Candidates at or above
+`similarity_threshold` (default `0.85`) are then checked, best first, by the
+**hit verifier**, and the first one it accepts is served.
+
+**Hit verification.** Similarity says two prompts are about the same thing,
+not that they have the same answer: "enable" vs "disable" two-factor auth
+scores as high as a true paraphrase with every embedder we measured. So each
+`SemanticCacheIndex` runs a `HitVerifier` on candidates (entries and queries
+carry their prompt text for this):
+
+- `LexicalNearMissVerifier` (default) rejects minimal edits: different
+  numbers, a content word swapped with everything else unchanged, flipped
+  polarity ("to"/"from", "on"/"off", "with"/"without"), negation, and a
+  swapped direction ("miles to km" / "km to miles"). Rewordings pass.
+  It is deterministic, takes microseconds, and never serves those
+  near-misses, at the cost of also refusing paraphrases that differ by a
+  single synonym swap.
+- `continuum.verifiers.LLMJudgeVerifier(base_url, model)` asks a chat model
+  (Ollama, vLLM, OpenAI) whether both prompts have the same answer. It
+  handles synonyms and related-but-different questions, and costs one call
+  per candidate hit. Verdicts are cached per prompt pair.
+- Subclass `continuum._native.HitVerifier` for anything else;
+  `set_verifier(None)` disables verification. `verifier_rejections()` counts
+  refusals.
 
 **Where vectors come from.** A session embeds the concatenated string inputs
 of each `TokenOp` with its `EmbeddingProvider` (`Session.set_embedding_provider`).
-The provider is an interface, `embed(text)`, `dimension()`, `identity()`,
-implementable in C++ or by subclassing `continuum._native.EmbeddingProvider` in
-Python. `continuum.embeddings` ships three:
+The provider is an interface (`embed(text)`, `dimension()`, `identity()`),
+implementable in C++ or by subclassing `continuum._native.EmbeddingProvider`
+in Python. `continuum.embeddings` ships:
 
 | Provider | Use |
 |----------|-----|
+| `WordLlamaEmbeddingProvider()` | **recommended**: local semantic model, no network, ~1 ms (`pip install "continuum-ai[semantic]"`) |
 | `CallableEmbeddingProvider(fn, dimension, identity)` | any local model, e.g. `SentenceTransformer(...).encode` |
 | `OpenAICompatibleEmbeddingProvider(base_url, model)` | a hosted `/v1/embeddings` endpoint (OpenAI, vLLM, Ollama) |
 | `PrecomputedEmbeddingProvider(vectors, identity)` | vectors computed ahead of time, for reproducible runs and evals |
 
 The built-in `BruteForceEmbeddingProvider(dim)` (identity
-`continuum/char-ngram-v1:<dim>`) hashes character 1–3-grams. It is
-deterministic and dependency-free, but lexical: it scores shared *spelling*,
-not shared meaning. Use a real model for production paraphrase matching.
+`continuum/char-ngram-v1:<dim>`) hashes character n-grams. It is
+deterministic and dependency-free, which suits tests, but it is **not usable
+for semantic caching**: it rates unrelated English questions 0.6–0.85
+similar and serves their answers.
+
+**Measured starting point.** `WordLlamaEmbeddingProvider` with threshold
+`0.7` and the default verifier had zero false hits and zero wrong answers on
+a held-out test set; see `benchmarks/reports/semantic-false-hits.md` for
+recall, the other combinations, and the residual risks.
 
 ```python
-from continuum.embeddings import CallableEmbeddingProvider
-from sentence_transformers import SentenceTransformer
+from continuum._native import SemanticCacheIndex
+from continuum.embeddings import WordLlamaEmbeddingProvider
 
-st = SentenceTransformer("all-MiniLM-L6-v2")
-session.set_embedding_provider(CallableEmbeddingProvider(
-    lambda text: st.encode(text, normalize_embeddings=True).tolist(),
-    dimension=384,
-    identity="sentence-transformers/all-MiniLM-L6-v2",
-))
+session.set_semantic_cache(SemanticCacheIndex(2048, 0.7))
+session.set_embedding_provider(WordLlamaEmbeddingProvider())
 ```
 
 **Why identity is in the key.** Cosine similarity between vectors from two
@@ -86,13 +110,10 @@ dimension. Storing `identity()` with each entry means changing the embedder
 (or its version) starts a fresh key space instead of producing silent false
 hits. Change the identity string whenever the vectors would change.
 
-**Reproducibility.** A run is reproducible when the embedder is deterministic
-and its identity pins the exact model and preprocessing. For evaluations, embed
-the dataset once and replay it through `PrecomputedEmbeddingProvider`.
-
-**Threshold.** How often a near-miss is served wrongly depends on the embedder
-and the threshold; `benchmarks/reports/semantic-false-hits.md` measures that
-trade-off.
+**Reproducibility.** A run is reproducible when the embedder and verifier are
+deterministic and the identity pins the exact model and preprocessing. For
+evaluations, embed the dataset once and replay it through
+`PrecomputedEmbeddingProvider`.
 
 ## Memory-graph recall tier
 

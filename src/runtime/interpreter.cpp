@@ -488,7 +488,8 @@ continuum::Value Interpreter::step_impl(const ir::Node& n, const std::vector<con
       if (!prompt_text.empty()) {
         const auto t0 = tracing ? UnixNowNs() : 0;
         auto embedding = embedder_->embed(prompt_text);
-        auto sem_result = semantic_cache_->lookup(embedding, model_id, cache_namespace_, embedder_->identity());
+        auto sem_result =
+            semantic_cache_->lookup(embedding, model_id, cache_namespace_, embedder_->identity(), prompt_text);
         std::optional<continuum::Value> sem_value;
         if (sem_result.above_threshold && !sem_result.output.empty()) {
           sem_value = MemoTable::deserialize_value(sem_result.output);
@@ -641,7 +642,7 @@ continuum::Value Interpreter::step_impl(const ir::Node& n, const std::vector<con
             auto output_bytes = MemoTable::serialize_value(out);
             if (!output_bytes.empty()) {
               semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_,
-                                      embedder_->identity());
+                                      embedder_->identity(), prompt_text);
             }
           }
         }

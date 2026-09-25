@@ -13,6 +13,7 @@
 #include <continuum/runtime/memory_graph.hpp>
 #include <continuum/runtime/prefetch.hpp>
 #include <continuum/runtime/semantic_cache.hpp>
+#include <continuum/runtime/hit_verifier.hpp>
 #include <continuum/runtime/session.hpp>
 
 #include <pybind11/pybind11.h>
@@ -502,6 +503,18 @@ class PyEmbeddingProvider : public continuum::runtime::EmbeddingProvider {
   }
   std::string identity() const override {
     PYBIND11_OVERRIDE_PURE(std::string, continuum::runtime::EmbeddingProvider, identity);
+  }
+};
+
+// Python subclasses of HitVerifier (an LLM judge, a cross-encoder, ...) gate
+// semantic-cache hits.
+class PyHitVerifier : public continuum::runtime::HitVerifier {
+ public:
+  bool verify(const std::string& cached_prompt, const std::string& new_prompt, float similarity) const override {
+    PYBIND11_OVERRIDE_PURE(bool, continuum::runtime::HitVerifier, verify, cached_prompt, new_prompt, similarity);
+  }
+  std::string name() const override {
+    PYBIND11_OVERRIDE_PURE(std::string, continuum::runtime::HitVerifier, name);
   }
 };
 
@@ -1355,28 +1368,44 @@ void bind_runtime(py::module_& m) {
       .def("set_similarity_threshold", &continuum::runtime::SemanticCacheIndex::set_similarity_threshold)
       .def("lookup", [](const continuum::runtime::SemanticCacheIndex& self,
                           py::list query_embedding, const std::string& model_id,
-                          const std::string& cache_namespace, const std::string& embedder_id) -> py::dict {
+                          const std::string& cache_namespace, const std::string& embedder_id,
+                          const std::string& query_prompt) -> py::dict {
              std::vector<float> emb;
              for (auto x : query_embedding) emb.push_back(py::cast<float>(x));
-             auto r = self.lookup(emb, model_id, cache_namespace, embedder_id);
+             continuum::runtime::SemanticCacheIndex::LookupResult r;
+             {
+               py::gil_scoped_release release;  // a Python verifier re-acquires it
+               r = self.lookup(emb, model_id, cache_namespace, embedder_id, query_prompt);
+             }
              py::dict d;
              d["output"] = py::bytes(reinterpret_cast<const char*>(r.output.data()), r.output.size());
              d["similarity"] = r.similarity;
              d["above_threshold"] = r.above_threshold;
+             d["prompt"] = r.prompt;
+             d["verifier_rejections"] = r.verifier_rejections;
              return d;
            }, py::arg("query_embedding"), py::arg("model_id"), py::arg("cache_namespace") = "",
-           py::arg("embedder_id") = "")
+           py::arg("embedder_id") = "", py::arg("query_prompt") = "")
       .def("insert", [](continuum::runtime::SemanticCacheIndex& self,
                           py::list embedding, const std::string& model_id,
                           py::bytes output_bytes, const std::string& cache_namespace,
-                          const std::string& embedder_id) {
+                          const std::string& embedder_id, const std::string& prompt) {
              std::vector<float> emb;
              for (auto x : embedding) emb.push_back(py::cast<float>(x));
              std::string bytes(output_bytes);
              std::vector<std::uint8_t> out(bytes.begin(), bytes.end());
-             self.insert(emb, model_id, std::move(out), cache_namespace, embedder_id);
+             self.insert(emb, model_id, std::move(out), cache_namespace, embedder_id, prompt);
            }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"),
-           py::arg("cache_namespace") = "", py::arg("embedder_id") = "")
+           py::arg("cache_namespace") = "", py::arg("embedder_id") = "", py::arg("prompt") = "")
+      .def("set_verifier", [](continuum::runtime::SemanticCacheIndex& self, py::object v) {
+             self.set_verifier(v.is_none() ? nullptr : v.cast<std::shared_ptr<continuum::runtime::HitVerifier>>());
+           }, py::arg("verifier"), py::keep_alive<1, 2>(),
+           "Gate hits with a HitVerifier (default LexicalNearMissVerifier); None disables verification.")
+      .def("verifier_name", [](const continuum::runtime::SemanticCacheIndex& self) -> py::object {
+             auto v = self.verifier();
+             return v == nullptr ? py::object(py::none()) : py::object(py::str(v->name()));
+           })
+      .def("verifier_rejections", &continuum::runtime::SemanticCacheIndex::verifier_rejections)
       .def("clear", &continuum::runtime::SemanticCacheIndex::clear)
       .def_static("cosine_similarity", [](py::list a, py::list b) {
         std::vector<float> va, vb;
@@ -1561,6 +1590,24 @@ void bind_runtime(py::module_& m) {
     return out;
   }, py::arg("cost_per_token_ms") = 2.0, py::arg("num_steps") = 20,
      py::arg("prefix_tokens") = 30);
+
+  py::class_<continuum::runtime::HitVerifier, PyHitVerifier, std::shared_ptr<continuum::runtime::HitVerifier>>(
+      m, "HitVerifier")
+      .def(py::init<>())
+      .def("verify", &continuum::runtime::HitVerifier::verify, py::arg("cached_prompt"), py::arg("new_prompt"),
+           py::arg("similarity") = 1.0f)
+      .def("name", &continuum::runtime::HitVerifier::name);
+
+  py::class_<continuum::runtime::LexicalNearMissVerifier, continuum::runtime::HitVerifier,
+             std::shared_ptr<continuum::runtime::LexicalNearMissVerifier>>(m, "LexicalNearMissVerifier")
+      .def(py::init<>())
+      .def_static("explain", [](const std::string& a, const std::string& b) {
+             const auto v = continuum::runtime::LexicalNearMissVerifier::explain(a, b);
+             py::dict d;
+             d["accept"] = v.accept;
+             d["reason"] = v.reason;
+             return d;
+           }, py::arg("cached_prompt"), py::arg("new_prompt"));
 
   py::class_<continuum::runtime::EmbeddingProvider, PyEmbeddingProvider>(m, "EmbeddingProvider")
       .def(py::init<>())

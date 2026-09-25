@@ -1,0 +1,306 @@
+{
+ "description": "Validation pairs: written before the hit verifier was tuned, then used once to diagnose it (so not a clean test). semantic_pairs_test.json is the untouched test set.",
+ "version": 1,
+ "pairs": [
+  {
+   "a": "how do I change my email address",
+   "b": "I need to update the email on my account",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what time does the store close",
+   "b": "when does the shop close tonight",
+   "label": "paraphrase"
+  },
+  {
+   "a": "is breakfast included with the room",
+   "b": "does the room rate include breakfast",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how long is the warranty on this laptop",
+   "b": "what warranty period does this laptop have",
+   "label": "paraphrase"
+  },
+  {
+   "a": "can I bring my dog on the train",
+   "b": "are dogs allowed on the train",
+   "label": "paraphrase"
+  },
+  {
+   "a": "explain recursion to a beginner",
+   "b": "what is recursion, explained simply",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I undo my last git commit",
+   "b": "revert the most recent commit in git",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what's the weather like in Paris today",
+   "b": "today's weather forecast for Paris",
+   "label": "paraphrase"
+  },
+  {
+   "a": "recommend a good laptop for students",
+   "b": "which laptop is best for a student",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I print a file in python",
+   "b": "python code to read and print a file",
+   "label": "paraphrase"
+  },
+  {
+   "a": "where can I park near the stadium",
+   "b": "parking options close to the stadium",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how many calories should I eat per day",
+   "b": "what is a healthy daily calorie intake",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what are the symptoms of the flu",
+   "b": "how do I know if I have the flu",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I merge two dictionaries in python",
+   "b": "combine two python dicts into one",
+   "label": "paraphrase"
+  },
+  {
+   "a": "when is the next train to Boston",
+   "b": "what time does the next Boston train leave",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I track my package",
+   "b": "where can I see my shipment status",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what does HTTP stand for",
+   "b": "HTTP is short for what",
+   "label": "paraphrase"
+  },
+  {
+   "a": "is the museum open on holidays",
+   "b": "does the museum open during public holidays",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I clear my browser cache",
+   "b": "steps to empty the browser cache",
+   "label": "paraphrase"
+  },
+  {
+   "a": "what is the difference between RAM and storage",
+   "b": "RAM versus storage, what's the difference",
+   "label": "paraphrase"
+  },
+  {
+   "a": "how do I change my email address",
+   "b": "how do I change my postal address",
+   "label": "near_miss"
+  },
+  {
+   "a": "what time does the store open",
+   "b": "what time does the store close",
+   "label": "near_miss"
+  },
+  {
+   "a": "is breakfast included with the room",
+   "b": "is dinner included with the room",
+   "label": "near_miss"
+  },
+  {
+   "a": "can I bring my dog on the train",
+   "b": "can I bring my bike on the train",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I undo my last git commit",
+   "b": "how do I undo my last git push",
+   "label": "near_miss"
+  },
+  {
+   "a": "what's the weather like in Paris today",
+   "b": "what's the weather like in Rome today",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I merge two dictionaries in python",
+   "b": "how do I merge two lists in python",
+   "label": "near_miss"
+  },
+  {
+   "a": "when is the next train to Boston",
+   "b": "when is the next train from Boston",
+   "label": "near_miss"
+  },
+  {
+   "a": "convert 5 euros to dollars",
+   "b": "convert 50 euros to dollars",
+   "label": "near_miss"
+  },
+  {
+   "a": "is the museum open on Monday",
+   "b": "is the museum closed on Monday",
+   "label": "near_miss"
+  },
+  {
+   "a": "add me to the mailing list",
+   "b": "remove me from the mailing list",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I increase the font size",
+   "b": "how do I decrease the font size",
+   "label": "near_miss"
+  },
+  {
+   "a": "what is the population of Sweden",
+   "b": "what is the population of Switzerland",
+   "label": "near_miss"
+  },
+  {
+   "a": "show me flights to London in May",
+   "b": "show me flights to London in June",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I lock my account",
+   "b": "how do I unlock my account",
+   "label": "near_miss"
+  },
+  {
+   "a": "book a room for 3 nights",
+   "b": "book a room for 2 nights",
+   "label": "near_miss"
+  },
+  {
+   "a": "what are the side effects of aspirin",
+   "b": "what are the side effects of ibuprofen",
+   "label": "near_miss"
+  },
+  {
+   "a": "turn on notifications",
+   "b": "turn off notifications",
+   "label": "near_miss"
+  },
+  {
+   "a": "is this product vegan",
+   "b": "is this product gluten free",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I sort a list in java",
+   "b": "how do I sort a list in python",
+   "label": "near_miss"
+  },
+  {
+   "a": "how do I change my email address",
+   "b": "what is the tallest building in the world",
+   "label": "unrelated"
+  },
+  {
+   "a": "what time does the store close",
+   "b": "explain how vaccines work",
+   "label": "unrelated"
+  },
+  {
+   "a": "is breakfast included with the room",
+   "b": "write a limerick about a cat",
+   "label": "unrelated"
+  },
+  {
+   "a": "can I bring my dog on the train",
+   "b": "how do I compute a standard deviation",
+   "label": "unrelated"
+  },
+  {
+   "a": "explain recursion to a beginner",
+   "b": "what is the best time to visit Japan",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I undo my last git commit",
+   "b": "how much protein is in an egg",
+   "label": "unrelated"
+  },
+  {
+   "a": "recommend a good laptop for students",
+   "b": "who wrote Pride and Prejudice",
+   "label": "unrelated"
+  },
+  {
+   "a": "where can I park near the stadium",
+   "b": "translate thank you into Italian",
+   "label": "unrelated"
+  },
+  {
+   "a": "what are the symptoms of the flu",
+   "b": "how do I set up a python virtual environment",
+   "label": "unrelated"
+  },
+  {
+   "a": "when is the next train to Boston",
+   "b": "what is the chemical formula for salt",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I track my package",
+   "b": "what causes the northern lights",
+   "label": "unrelated"
+  },
+  {
+   "a": "what does HTTP stand for",
+   "b": "how do I bake sourdough bread",
+   "label": "unrelated"
+  },
+  {
+   "a": "is the museum open on holidays",
+   "b": "how do I reset my wifi router",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I clear my browser cache",
+   "b": "what is the capital of Canada",
+   "label": "unrelated"
+  },
+  {
+   "a": "book a room for 3 nights",
+   "b": "what is a black hole",
+   "label": "unrelated"
+  },
+  {
+   "a": "turn on notifications",
+   "b": "who invented the telephone",
+   "label": "unrelated"
+  },
+  {
+   "a": "is this product vegan",
+   "b": "how do I write a SQL join",
+   "label": "unrelated"
+  },
+  {
+   "a": "show me flights to London in May",
+   "b": "what is the square root of 144",
+   "label": "unrelated"
+  },
+  {
+   "a": "how do I lock my account",
+   "b": "recommend a podcast about history",
+   "label": "unrelated"
+  },
+  {
+   "a": "what are the side effects of aspirin",
+   "b": "how do I tie a tie",
+   "label": "unrelated"
+  }
+ ]
+}

@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, Generation
 
 from continuum.embeddings import PrecomputedEmbeddingProvider
+from continuum.verifiers import HitVerifier
 from continuum_langchain import ContinuumCache, ContinuumLLM
 
 
@@ -78,18 +79,38 @@ def test_chat_model_tool_calls_never_cached() -> None:
 def test_semantic_tier() -> None:
     with pytest.raises(ValueError):
         ContinuumCache(semantic_threshold=0.9)
+    original = "how do I reset my password"
+    rewording = "I forgot my password and need to reset it"
+    near_miss = "how do I reset my username"
     emb = PrecomputedEmbeddingProvider(
-        {"reset password": [1.0, 0.0], "forgot password": [1.0, 0.0], "refund policy": [0.0, 1.0]},
+        {
+            original: [1.0, 0.0],
+            rewording: [1.0, 0.0],
+            near_miss: [1.0, 0.0],
+            "refund policy": [0.0, 1.0],
+        },
         "test",
     )
     cache = ContinuumCache(semantic_threshold=0.95, embedder=emb)
-    cache.update("reset password", "llm", [Generation(text="use the reset link")])
-    assert cache.lookup("forgot password", "llm")[0].text == "use the reset link"  # type: ignore[index]
+    cache.update(original, "llm", [Generation(text="use the reset link")])
+    assert cache.lookup(rewording, "llm")[0].text == "use the reset link"  # type: ignore[index]
+    assert cache.lookup(near_miss, "llm") is None  # same vector, refused by the hit verifier
     assert cache.lookup("refund policy", "llm") is None
-    assert cache.lookup("forgot password", "other-llm") is None
+    assert cache.lookup(rewording, "other-llm") is None
     assert cache.stats["semantic_hits"] == 1
     cache.clear()
-    assert cache.lookup("forgot password", "llm") is None
+    assert cache.lookup(rewording, "llm") is None
+
+    class AcceptAll(HitVerifier):
+        def verify(self, cached_prompt: str, new_prompt: str, similarity: float = 1.0) -> bool:
+            return True
+
+        def name(self) -> str:
+            return "accept-all"
+
+    lax = ContinuumCache(semantic_threshold=0.95, embedder=emb, verifier=AcceptAll())
+    lax.update(original, "llm", [Generation(text="use the reset link")])
+    assert lax.lookup(near_miss, "llm") is not None
 
 
 def test_llm_stop_and_params() -> None:

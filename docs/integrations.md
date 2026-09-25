@@ -30,9 +30,12 @@ parameters, with the upstream call as the backend:
   Continuum's state. The shared prefix is reported as savings, preferring the
   upstream's own `usage.prompt_tokens_details.cached_tokens`.
 - **Paraphrases** can hit the semantic tier, but only with
-  `--semantic-threshold` and `--embed-model`. It is off by default; read
-  [the false-hit report](../benchmarks/reports/semantic-false-hits.md) before
-  turning it on.
+  `--semantic-threshold` and `--embed-model`. It is off by default. The
+  measured starting point is `--embed-model wordllama --semantic-threshold 0.7`
+  (a local model; `pip install "continuum-ai[semantic]"`). Every candidate
+  hit also passes the near-miss verifier; add `--judge-model <chat model>` to
+  have an LLM judge instead. See
+  [the false-hit report](../benchmarks/reports/semantic-false-hits.md).
 
 Transport-only fields (`stream`, `stream_options`, `user`, `metadata`,
 `store`, `service_tier`) are not part of the key, so a streamed and a

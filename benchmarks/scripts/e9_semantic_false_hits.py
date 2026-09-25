@@ -1,85 +1,124 @@
-"""E9: semantic-cache false-hit rate vs similarity threshold (issue #10).
+"""E9: semantic-cache false hits vs threshold, per embedder and hit verifier.
 
-Sweeps the similarity threshold over a labeled set of paraphrase / near-miss /
-unrelated prompt pairs and reports precision, recall, and false-hit rate. See
-``continuum.benchmarks.semantic_eval`` for the method.
+Sweeps the similarity threshold over labeled paraphrase / near-miss /
+unrelated prompt pairs (see ``continuum.benchmarks.semantic_eval``) for every
+combination of:
 
-Default embedder is the bundled char-n-gram provider (offline, deterministic).
-Evaluate a real one against any OpenAI-compatible embeddings endpoint:
+- embedder: the bundled char-n-gram provider, WordLlama (if installed), and
+  optionally any OpenAI-compatible embeddings endpoint;
+- hit verifier: none, the default ``LexicalNearMissVerifier``, and optionally
+  an ``LLMJudgeVerifier`` on a chat endpoint;
+- dataset: ``dev`` (used to design the verifier), ``validation`` (used once to
+  diagnose it), ``test`` (never used for tuning; the headline numbers).
 
-    PYTHONPATH=python python benchmarks/scripts/e9_semantic_false_hits.py \\
-        --embed-base-url http://localhost:11434 --embed-model nomic-embed-text
+Run offline::
 
-Writes benchmarks/data/e9_semantic_false_hits[_<slug>].json.
+    pip install "continuum-ai[semantic]"
+    PYTHONPATH=python python benchmarks/scripts/e9_semantic_false_hits.py
+
+Add an Ollama embedder and judge::
+
+    ... e9_semantic_false_hits.py --base-url http://localhost:11434 \\
+        --embed-model nomic-embed-text --judge-model gemma4
+
+Writes benchmarks/data/e9_semantic_false_hits.json.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
+from typing import Any
 
-from continuum._native import BruteForceEmbeddingProvider, EmbeddingProvider
-from continuum.benchmarks.semantic_eval import evaluate, load_pairs, safest_threshold
-from continuum.embeddings import OpenAICompatibleEmbeddingProvider
+from continuum._native import BruteForceEmbeddingProvider, EmbeddingProvider, HitVerifier
+from continuum.benchmarks.semantic_eval import evaluate, load_pairs, summarize
+from continuum.verifiers import LexicalNearMissVerifier, LLMJudgeVerifier
 
 ROOT = Path(__file__).resolve().parents[2]
-DATASET = ROOT / "benchmarks" / "data" / "semantic_pairs.json"
-DEFAULT_RUNTIME_THRESHOLD = 0.85
+DATA = ROOT / "benchmarks" / "data"
+DATASETS = {
+    "dev": DATA / "semantic_pairs.json",
+    "validation": DATA / "semantic_pairs_validation.json",
+    "test": DATA / "semantic_pairs_test.json",
+}
 
 
-def main() -> None:
+def embedders(args: argparse.Namespace) -> list[EmbeddingProvider]:
+    out: list[EmbeddingProvider] = [BruteForceEmbeddingProvider(64)]
+    try:
+        from continuum.embeddings import WordLlamaEmbeddingProvider
+
+        out.append(WordLlamaEmbeddingProvider())
+    except ImportError:
+        print('(skipping WordLlama: pip install "continuum-ai[semantic]")')
+    if args.base_url and args.embed_model:
+        from continuum.embeddings import OpenAICompatibleEmbeddingProvider
+
+        out.append(
+            OpenAICompatibleEmbeddingProvider(args.base_url, args.embed_model, api_key=args.api_key)
+        )
+    return out
+
+
+def verifiers(args: argparse.Namespace) -> list[HitVerifier | None]:
+    out: list[HitVerifier | None] = [None, LexicalNearMissVerifier()]
+    if args.base_url and args.judge_model:
+        out.append(LLMJudgeVerifier(args.base_url, args.judge_model, api_key=args.api_key))
+    return out
+
+
+def main(argv: list[str] | None = None) -> dict[str, Any]:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--dataset", default=str(DATASET))
-    ap.add_argument("--dim", type=int, default=64, help="n-gram embedder dimension")
-    ap.add_argument("--embed-base-url", help="OpenAI-compatible server for embeddings")
-    ap.add_argument("--embed-model", help="embedding model name on that server")
+    ap.add_argument("--base-url", help="OpenAI-compatible server (Ollama, vLLM, OpenAI)")
+    ap.add_argument("--embed-model", help="embedding model on --base-url")
+    ap.add_argument("--judge-model", help="chat model on --base-url for the LLM-judge verifier")
     ap.add_argument("--api-key")
-    args = ap.parse_args()
+    ap.add_argument("--out", default=str(DATA / "e9_semantic_false_hits.json"))
+    args = ap.parse_args(argv)
 
-    embedder: EmbeddingProvider
-    if args.embed_base_url:
-        if not args.embed_model:
-            ap.error("--embed-model is required with --embed-base-url")
-        embedder = OpenAICompatibleEmbeddingProvider(
-            args.embed_base_url, args.embed_model, api_key=args.api_key
-        )
-    else:
-        embedder = BruteForceEmbeddingProvider(args.dim)
+    results = []
+    for embedder in embedders(args):
+        for verifier in verifiers(args):
+            for name, path in DATASETS.items():
+                full = evaluate(load_pairs(path), embedder, verifier=verifier)
+                results.append(
+                    {
+                        "dataset": name,
+                        **{k: full[k] for k in ("embedder", "verifier", "pairs")},
+                        **summarize(full),
+                        "sweep": full["thresholds"],
+                        "similarity": full["similarity"],
+                    }
+                )
 
-    result = evaluate(load_pairs(args.dataset), embedder)
-    result["dataset"] = str(Path(args.dataset).resolve().relative_to(ROOT))
-    result["zero_false_hit_threshold"] = safest_threshold(result, 0.0)
-
-    default_id = BruteForceEmbeddingProvider(64).identity()
-    slug = (
-        ""
-        if result["embedder"] == default_id
-        else "_" + re.sub(r"[^a-z0-9]+", "-", result["embedder"].lower()).strip("-")
+    print(
+        f"{'embedder':<30} {'verifier':<24} {'dataset':<10} {'zero-FH thr':>11} {'recall@0FH':>10} "
+        f"{'FHR@0.85':>8} {'recall@0.85':>11}"
     )
-    out = ROOT / "benchmarks" / "data" / f"e9_semantic_false_hits{slug}.json"
-    out.write_text(json.dumps(result, indent=2) + "\n")
-
-    print(f"E9: semantic false hits  embedder={result['embedder']}  pairs={result['pairs']}")
-    for label, s in result["similarity"].items():
+    for r in results:
+        thr = (
+            "-" if r["zero_false_hit_threshold"] is None else f"{r['zero_false_hit_threshold']:.2f}"
+        )
+        rec = (
+            "-"
+            if r["recall_at_zero_false_hits"] is None
+            else f"{r['recall_at_zero_false_hits']:.2f}"
+        )
         print(
-            f"  similarity {label:<10} min={s['min']:.3f} mean={s['mean']:.3f} max={s['max']:.3f}"
+            f"{r['embedder']:<30} {str(r['verifier'] or 'none'):<24} {r['dataset']:<10} {thr:>11} {rec:>10} "
+            f"{r['false_hit_rate_at_default']:>8.3f} {r['recall_at_default']:>11.2f}"
         )
-    print("  thr   prec   recall  false-hit  near-miss  unrelated  cache-wrong")
-    for r in result["thresholds"]:
-        prec = "  -  " if r["precision"] is None else f"{r['precision']:.3f}"
-        cw = (
-            "  -" if r["cache_wrong_answer_rate"] is None else f"{r['cache_wrong_answer_rate']:.3f}"
+    out = Path(args.out)
+    out.write_text(
+        json.dumps(
+            {"experiment": "E9: semantic false hits by embedder and verifier", "results": results},
+            indent=1,
         )
-        mark = "  <- runtime default" if r["threshold"] == DEFAULT_RUNTIME_THRESHOLD else ""
-        print(
-            f"  {r['threshold']:.2f}  {prec}  {r['recall']:.3f}   {r['false_hit_rate']:.3f}"
-            f"      {r['near_miss_false_hit_rate']:.3f}      {r['unrelated_false_hit_rate']:.3f}"
-            f"      {cw}{mark}"
-        )
-    print(f"  lowest threshold with zero false hits: {result['zero_false_hit_threshold']}")
-    print(f"wrote {out.relative_to(ROOT)}")
+        + "\n"
+    )
+    print(f"wrote {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out}")
+    return {"results": results}
 
 
 if __name__ == "__main__":

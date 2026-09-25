@@ -45,7 +45,11 @@ Frontend
    :show-inheritance:
 
 .. automodule:: continuum.embeddings
-   :members: CallableEmbeddingProvider, OpenAICompatibleEmbeddingProvider, PrecomputedEmbeddingProvider
+   :members: CallableEmbeddingProvider, OpenAICompatibleEmbeddingProvider, PrecomputedEmbeddingProvider, WordLlamaEmbeddingProvider
+   :show-inheritance:
+
+.. automodule:: continuum.verifiers
+   :members: LLMJudgeVerifier, AllOf
    :show-inheritance:
 
 Runtime

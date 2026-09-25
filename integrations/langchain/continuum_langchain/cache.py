@@ -79,6 +79,12 @@ class ContinuumCache(BaseCache):
             embedder's false-hit rate first (``benchmarks/scripts/e9_semantic_false_hits.py``).
         embedder: Embedding provider for the semantic tier; its identity is
             part of the key, so switching embedders never mixes vectors.
+            ``continuum.embeddings.WordLlamaEmbeddingProvider`` with
+            ``semantic_threshold=0.7`` is the measured starting point.
+        verifier: Hit verifier for semantic candidates; defaults to the
+            engine's ``LexicalNearMissVerifier``. Pass
+            ``continuum.verifiers.LLMJudgeVerifier(...)`` to also catch
+            topically-related-but-different questions.
         namespace: Cache namespace, isolating tenants that share tables.
         memo: Share an existing ``MemoTable`` (e.g. with a Continuum ``Session``).
 
@@ -94,6 +100,7 @@ class ContinuumCache(BaseCache):
         namespace: str = "",
         memo: MemoTable | None = None,
         semantic_entries: int = 2048,
+        verifier: Any = None,
     ) -> None:
         self.memo = memo if memo is not None else MemoTable(memo_entries, 0)
         self.semantic: SemanticCacheIndex | None = None
@@ -101,6 +108,8 @@ class ContinuumCache(BaseCache):
             if embedder is None:
                 raise ValueError("the semantic tier needs an embedder")
             self.semantic = SemanticCacheIndex(semantic_entries, semantic_threshold)
+            if verifier is not None:
+                self.semantic.set_verifier(verifier)
         self.embedder = embedder
         self.namespace = namespace
         self.stats = {"memo_hits": 0, "semantic_hits": 0, "misses": 0, "skipped_tool_calls": 0}
@@ -119,6 +128,7 @@ class ContinuumCache(BaseCache):
                 _llm_key(llm_string),
                 self.namespace,
                 self.embedder.identity(),
+                prompt,  # checked by the hit verifier
             )
             if r["above_threshold"]:
                 self.stats["semantic_hits"] += 1
@@ -139,6 +149,7 @@ class ContinuumCache(BaseCache):
                 data,
                 self.namespace,
                 self.embedder.identity(),
+                prompt,
             )
 
     def clear(self, **kwargs: Any) -> None:

@@ -102,6 +102,7 @@ add_library(continuum_core
     src/runtime/session.cpp
     src/runtime/memo_table.cpp
     src/runtime/semantic_cache.cpp
+    src/runtime/hit_verifier.cpp
     src/runtime/memory_graph.cpp
     src/runtime/layer_cache.cpp
     src/runtime/prefetch.cpp

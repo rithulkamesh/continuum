@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 namespace continuum::runtime {
 
@@ -14,38 +15,99 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
     const std::vector<float>& query_embedding,
     const std::string& model_id,
     const std::string& cache_namespace,
-    const std::string& embedder_id) const {
-  std::lock_guard<std::mutex> lock(mu_);
-
+    const std::string& embedder_id,
+    const std::string& query_prompt) const {
+  struct Candidate {
+    std::size_t index;
+    float similarity;
+    std::uint64_t stamp;
+    std::string prompt;
+  };
   LookupResult best;
-  SemanticCacheEntry* best_entry = nullptr;
-  for (auto& entry : entries_) {
-    if (entry.model_id != model_id) continue;
-    if (entry.cache_namespace != cache_namespace) continue;
-    if (entry.embedder_id != embedder_id) continue;
-    if (entry.embedding.size() != query_embedding.size()) continue;
-
-    float sim = cosine_similarity(query_embedding, entry.embedding);
-    if (sim > best.similarity) {
-      best.similarity = sim;
+  std::vector<Candidate> candidates;
+  std::shared_ptr<const HitVerifier> verifier;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    verifier = verifier_;
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+      const auto& entry = entries_[i];
+      if (entry.model_id != model_id) continue;
+      if (entry.cache_namespace != cache_namespace) continue;
+      if (entry.embedder_id != embedder_id) continue;
+      if (entry.embedding.size() != query_embedding.size()) continue;
+      const float sim = cosine_similarity(query_embedding, entry.embedding);
+      best.similarity = std::max(best.similarity, sim);
       if (sim >= similarity_threshold_) {
-        best.above_threshold = true;
-        best.output = entry.cached_output;
-        best_entry = &entry;
+        candidates.push_back({i, sim, static_cast<std::uint64_t>(entry.last_access_ns), entry.prompt});
       }
     }
   }
-  if (best_entry != nullptr) {
-    best_entry->last_access_ns = static_cast<std::int64_t>(++clock_);
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Candidate& a, const Candidate& b) { return a.similarity > b.similarity; });
+  // Verify outside the lock: a verifier may be slow (an LLM judge).
+  for (const auto& cand : candidates) {
+    const bool checkable = verifier != nullptr && !query_prompt.empty() && !cand.prompt.empty();
+    if (checkable) {
+      const std::string key = verifier->name() + '\x1f' + cand.prompt + '\x1f' + query_prompt;
+      std::optional<bool> verdict;
+      {
+        std::lock_guard<std::mutex> lock(mu_);
+        auto it = verdicts_.find(key);
+        if (it != verdicts_.end()) verdict = it->second;
+      }
+      if (!verdict.has_value()) {
+        verdict = verifier->verify(cand.prompt, query_prompt, cand.similarity);
+        std::lock_guard<std::mutex> lock(mu_);
+        if (verdicts_.size() >= kMaxVerdicts) verdicts_.clear();
+        verdicts_[key] = *verdict;
+      }
+      if (!*verdict) {
+        ++best.verifier_rejections;
+        continue;
+      }
+    }
+    std::lock_guard<std::mutex> lock(mu_);
+    // The entry may have been evicted meanwhile; only serve it if unchanged.
+    if (cand.index < entries_.size() &&
+        static_cast<std::uint64_t>(entries_[cand.index].last_access_ns) == cand.stamp) {
+      auto& entry = entries_[cand.index];
+      best.above_threshold = true;
+      best.similarity = cand.similarity;
+      best.output = entry.cached_output;
+      best.prompt = entry.prompt;
+      entry.last_access_ns = static_cast<std::int64_t>(++clock_);
+    }
+    break;
+  }
+  if (best.verifier_rejections > 0) {
+    std::lock_guard<std::mutex> lock(mu_);
+    verifier_rejections_ += best.verifier_rejections;
   }
   return best;
+}
+
+void SemanticCacheIndex::set_verifier(std::shared_ptr<const HitVerifier> verifier) {
+  std::lock_guard<std::mutex> lock(mu_);
+  verifier_ = std::move(verifier);
+  verdicts_.clear();
+}
+
+std::shared_ptr<const HitVerifier> SemanticCacheIndex::verifier() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return verifier_;
+}
+
+std::int64_t SemanticCacheIndex::verifier_rejections() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return verifier_rejections_;
 }
 
 void SemanticCacheIndex::insert(const std::vector<float>& embedding,
                                 const std::string& model_id,
                                 std::vector<std::uint8_t> output,
                                 const std::string& cache_namespace,
-                                const std::string& embedder_id) {
+                                const std::string& embedder_id,
+                                const std::string& prompt) {
   std::lock_guard<std::mutex> lock(mu_);
   if (max_entries_ == 0) {
     return;
@@ -67,6 +129,7 @@ void SemanticCacheIndex::insert(const std::vector<float>& embedding,
   entry.last_access_ns = static_cast<std::int64_t>(++clock_);
   entry.cache_namespace = cache_namespace;
   entry.embedder_id = embedder_id;
+  entry.prompt = prompt;
   entries_.push_back(std::move(entry));
 }
 
@@ -74,6 +137,8 @@ void SemanticCacheIndex::clear() {
   std::lock_guard<std::mutex> lock(mu_);
   entries_.clear();
   clock_ = 0;
+  verifier_rejections_ = 0;
+  verdicts_.clear();
 }
 
 std::size_t SemanticCacheIndex::size() const {
@@ -88,7 +153,7 @@ std::size_t SemanticCacheIndex::estimated_bytes() const {
     total += sizeof(SemanticCacheEntry);
     total += entry.embedding.size() * sizeof(float);
     total += entry.cached_output.size() + entry.model_id.size() + entry.cache_namespace.size() +
-             entry.embedder_id.size();
+             entry.embedder_id.size() + entry.prompt.size();
   }
   return total;
 }

@@ -14,6 +14,13 @@ Three shapes cover the common cases:
   endpoint (OpenAI, vLLM, Ollama, LM Studio, ...).
 - :class:`PrecomputedEmbeddingProvider` serves vectors computed ahead of time,
   for fully reproducible runs and offline evaluation.
+- :class:`WordLlamaEmbeddingProvider` is a small semantic model that runs
+  locally on CPU with no download (``pip install "continuum-ai[semantic]"``).
+  It is the recommended starting point for the semantic tier.
+
+Pair any of them with the semantic tier's hit verifier (on by default, see
+:mod:`continuum.verifiers`): similarity alone cannot tell a paraphrase from a
+near-miss edit such as "enable" vs "disable".
 
 The built-in :class:`continuum._native.BruteForceEmbeddingProvider` (character
 n-gram hashing, identity ``continuum/char-ngram-v1:<dim>``) stays the default
@@ -24,8 +31,10 @@ semantic.
 from __future__ import annotations
 
 import json
+import math
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from continuum._native import EmbeddingProvider
 
@@ -34,6 +43,7 @@ __all__ = [
     "EmbeddingProvider",
     "OpenAICompatibleEmbeddingProvider",
     "PrecomputedEmbeddingProvider",
+    "WordLlamaEmbeddingProvider",
 ]
 
 
@@ -168,6 +178,59 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
 
     def embed(self, text: str) -> list[float]:
         return _checked(self._request(text), self._dimension, self._identity)
+
+    def dimension(self) -> int:
+        return self._dimension
+
+    def identity(self) -> str:
+        return self._identity
+
+
+class WordLlamaEmbeddingProvider(EmbeddingProvider):
+    """Local semantic embeddings from WordLlama (static token embeddings
+    distilled from an LLM's input layer; ~16 MB, CPU, sub-millisecond).
+
+    The model files ship inside the ``wordllama`` wheel, so this works with no
+    network access. Requires ``pip install "continuum-ai[semantic]"``.
+
+    Args:
+        config: WordLlama model config (``"l2_supercat"`` ships in the wheel).
+        dim: Embedding width (the bundled model is 256; smaller truncates).
+    """
+
+    def __init__(self, config: str = "l2_supercat", dim: int = 256) -> None:
+        super().__init__()
+        try:
+            import wordllama
+        except ImportError as exc:  # pragma: no cover - exercised without the extra
+            raise ImportError(
+                'WordLlamaEmbeddingProvider needs wordllama: pip install "continuum-ai[semantic]"'
+            ) from exc
+        self._model = self._load_bundled(wordllama, config, dim)
+        self._dimension = dim
+        self._identity = f"wordllama/{config}:{dim}"
+
+    @staticmethod
+    def _load_bundled(wordllama: Any, config: str, dim: int) -> Any:
+        from pathlib import Path
+
+        pkg = Path(wordllama.__file__).parent
+        tokenizer_file = pkg / "tokenizers" / f"{config}_tokenizer_config.json"
+        weights_file = pkg / "weights" / f"{config}_256.safetensors"
+        if tokenizer_file.is_file() and weights_file.is_file():
+            from safetensors import safe_open
+            from tokenizers import Tokenizer
+            from wordllama.inference import WordLlamaInference
+
+            with safe_open(str(weights_file), framework="np", device="cpu") as f:
+                embedding = f.get_tensor("embedding.weight")[:, :dim]
+            return WordLlamaInference(embedding, Tokenizer.from_file(str(tokenizer_file)))
+        return wordllama.WordLlama.load(config=config, dim=dim)  # pragma: no cover - downloads
+
+    def embed(self, text: str) -> list[float]:
+        vec = [float(x) for x in self._model.embed([text])[0]]
+        norm = math.sqrt(sum(x * x for x in vec))
+        return [x / norm for x in vec] if norm > 0 else vec
 
     def dimension(self) -> int:
         return self._dimension

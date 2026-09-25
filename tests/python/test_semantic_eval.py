@@ -42,7 +42,7 @@ def test_metrics_per_threshold() -> None:
     assert low["precision"] == 0.5
     # Cache level: the paraphrase and the near miss are both answered by the
     # single anchor; only the paraphrase answer is right.
-    assert (low["cache_served"], low["cache_wrong_answers"]) == (2, 1)
+    assert (low["cache_served"], low["cache_wrong_answers"], low["cache_unjudged"]) == (2, 1, 0)
 
     mid = _row(result, 0.9)
     assert (mid["true_hits"], mid["false_hits"], mid["recall"]) == (1, 0, 1.0)
@@ -67,3 +67,34 @@ def test_unknown_label_rejected(tmp_path: Path) -> None:
     f.write_text(json.dumps({"pairs": [{"a": "x", "b": "y", "label": "maybe"}]}))
     with pytest.raises(ValueError, match="unknown labels"):
         load_pairs(f)
+
+
+def test_verifier_and_unjudged_serves() -> None:
+    from continuum.benchmarks.semantic_eval import summarize
+    from continuum.verifiers import LexicalNearMissVerifier
+
+    vecs = {**VECS, "I lost my password and must reset it": [0.99, 0.14, 0.0]}
+    pairs = [*PAIRS, Pair("weather today", "I lost my password and must reset it", "unrelated")]
+    emb = PrecomputedEmbeddingProvider(vecs, "test")
+    plain = evaluate(pairs, emb, thresholds=[0.5])
+    checked = evaluate(pairs, emb, thresholds=[0.5], verifier=LexicalNearMissVerifier())
+    assert checked["verifier"] == "lexical-near-miss-v1" and plain["verifier"] is None
+    # "reset username" is a one-word edit of "reset password": refused.
+    assert plain["thresholds"][0]["near_miss_false_hit_rate"] == 1.0
+    assert checked["thresholds"][0]["near_miss_false_hit_rate"] == 0.0
+    row = checked["thresholds"][0]
+    # The rewording is served by "reset password", a pair with no label.
+    assert row["cache_unjudged"] == 1 and row["unjudged"] == [
+        ["I lost my password and must reset it", "reset password"]
+    ]
+    s = summarize(checked, default_threshold=0.5)
+    # "forgot password" is a one-word swap of "reset password": the lexical
+    # verifier refuses synonym swaps too, so this paraphrase is lost.
+    assert s["zero_false_hit_threshold"] == 0.5 and s["recall_at_zero_false_hits"] == 0.0
+    assert summarize(plain, default_threshold=0.5)["zero_false_hit_threshold"] is None
+
+
+def test_validation_and_test_sets_are_balanced() -> None:
+    for name in ("semantic_pairs_validation.json", "semantic_pairs_test.json"):
+        labels = [p.label for p in load_pairs(ROOT / "benchmarks" / "data" / name)]
+        assert {labels.count(x) for x in ("paraphrase", "near_miss", "unrelated")} == {20}

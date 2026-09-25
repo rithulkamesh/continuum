@@ -367,3 +367,31 @@ TEST(ObserverTest, EmitsTierAndNodeEvents) {
   session.run(g, inputs);
   EXPECT_EQ(obs.events.size(), 5u);
 }
+
+TEST(HitVerifierTest, LexicalRulesAndIndexFallback) {
+  using continuum::runtime::LexicalNearMissVerifier;
+  EXPECT_EQ(LexicalNearMissVerifier::explain("how do I reset my password", "how do I reset my username").reason,
+            "substitution");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("book 3 nights", "book 2 nights").reason, "numbers");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("turn on alerts", "turn off alerts").reason, "polarity");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("is it open", "isn't it open").reason, "negation");
+  EXPECT_EQ(LexicalNearMissVerifier::explain("convert 10 miles to km", "convert 10 km to miles").reason,
+            "direction");
+  EXPECT_TRUE(LexicalNearMissVerifier::explain("how do I reset my password",
+                                               "I forgot my password and need to reset it").accept);
+
+  continuum::runtime::SemanticCacheIndex idx(8, 0.9f);
+  idx.insert({1.0f, 0.0f}, "m", {1}, "", "", "how do I reset my username");
+  idx.insert({0.97f, 0.243f}, "m", {2}, "", "", "how do I reset my password");
+  const auto r = idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password");
+  ASSERT_TRUE(r.above_threshold);
+  EXPECT_EQ(r.output, std::vector<std::uint8_t>{2});
+  EXPECT_EQ(r.verifier_rejections, 1);
+  // Cached verdict: the same lookup does not re-run the verifier, and still refuses.
+  EXPECT_EQ(idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password").output,
+            std::vector<std::uint8_t>{2});
+  EXPECT_EQ(idx.verifier_rejections(), 2);
+  idx.set_verifier(nullptr);
+  EXPECT_EQ(idx.lookup({1.0f, 0.0f}, "m", "", "", "how do I reset my password").output,
+            std::vector<std::uint8_t>{1});
+}

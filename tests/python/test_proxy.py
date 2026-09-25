@@ -397,23 +397,59 @@ def test_semantic_tier_opt_in(upstream: Upstream) -> None:
             )
         )
 
-    vectors = {key("reset password"): [1.0, 0.0], key("forgot password"): [1.0, 0.0]}
+    original = "how do I reset my password"
+    rewording = "I forgot my password and need to reset it"
+    near_miss = "how do I reset my username"
+    # All three share one vector: only the hit verifier can tell them apart.
+    vectors = {key(q): [1.0, 0.0] for q in (original, rewording, near_miss)}
     emb = PrecomputedEmbeddingProvider(vectors, "test")
     p = ContinuumProxy(
         ProxyConfig(upstream=upstream.url, semantic_threshold=0.95, embedder=emb), port=0
     ).start()
     try:
         client = _client(p)
-        a = client.chat.completions.create(
-            model="m", messages=[{"role": "user", "content": "reset password"}]
-        )
-        raw = client.chat.completions.with_raw_response.create(
-            model="m", messages=[{"role": "user", "content": "forgot password"}]
-        )
+
+        def ask(q: str) -> Any:
+            return client.chat.completions.with_raw_response.create(
+                model="m", messages=[{"role": "user", "content": q}]
+            )
+
+        a = ask(original)
+        raw = ask(rewording)
         assert raw.headers["x-continuum-served-by"] == "semantic"
-        assert raw.parse().choices[0].message.content == a.choices[0].message.content
+        assert raw.parse().choices[0].message.content == a.parse().choices[0].message.content
+        miss = ask(near_miss)
+        assert miss.headers["x-continuum-cache"] == "miss"  # verifier refused the near-miss
+        assert "username" in miss.parse().choices[0].message.content
+        assert p.semantic is not None and p.semantic.verifier_rejections() >= 1
     finally:
         p.close()
+
+    from continuum.verifiers import HitVerifier
+
+    class AcceptAll(HitVerifier):
+        def verify(self, cached_prompt: str, new_prompt: str, similarity: float = 1.0) -> bool:
+            return True
+
+        def name(self) -> str:
+            return "accept-all"
+
+    lax = ContinuumProxy(
+        ProxyConfig(
+            upstream=upstream.url, semantic_threshold=0.95, embedder=emb, verifier=AcceptAll()
+        ),
+        port=0,
+    ).start()
+    try:
+        client = _client(lax)
+        client.chat.completions.create(model="m", messages=[{"role": "user", "content": original}])
+        raw = client.chat.completions.with_raw_response.create(
+            model="m", messages=[{"role": "user", "content": near_miss}]
+        )
+        assert raw.headers["x-continuum-served-by"] == "semantic"  # custom verifier in charge
+        assert lax.semantic is not None and lax.semantic.verifier_name() == "accept-all"
+    finally:
+        lax.close()
 
 
 def test_helpers() -> None:
