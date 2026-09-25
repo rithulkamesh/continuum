@@ -406,7 +406,7 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
       }
       if (!prompt_text.empty()) {
         auto embedding = embedder_->embed(prompt_text);
-        auto sem_result = semantic_cache_->lookup(embedding, model_id, cache_namespace_);
+        auto sem_result = semantic_cache_->lookup(embedding, model_id, cache_namespace_, embedder_->identity());
         if (sem_result.above_threshold && !sem_result.output.empty()) {
           auto sem_value = MemoTable::deserialize_value(sem_result.output);
           if (sem_value.has_value()) {
@@ -541,7 +541,8 @@ continuum::Value Interpreter::step(const ir::Node& n, const std::vector<continuu
             auto embedding = embedder_->embed(prompt_text);
             auto output_bytes = MemoTable::serialize_value(out);
             if (!output_bytes.empty()) {
-              semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_);
+              semantic_cache_->insert(embedding, model_id, std::move(output_bytes), cache_namespace_,
+                                      embedder_->identity());
             }
           }
         }

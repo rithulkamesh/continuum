@@ -9,10 +9,19 @@
 
 namespace continuum::runtime {
 
+/// Source of the vectors the semantic tier compares.
+///
+/// Implement it in C++ or subclass `continuum._native.EmbeddingProvider` in
+/// Python (a local model, a hosted endpoint, precomputed vectors, ...).
 struct EmbeddingProvider {
   virtual ~EmbeddingProvider() = default;
+  /// Embed \p text; the result must have `dimension()` elements.
   virtual std::vector<float> embed(const std::string& text) const = 0;
   virtual std::size_t dimension() const = 0;
+  /// Stable identity of the embedding space (model name + version + any
+  /// setting that changes vectors). It is part of the semantic cache key, so
+  /// vectors from different embedders never compare against each other.
+  virtual std::string identity() const = 0;
 };
 
 struct SemanticCacheEntry {
@@ -21,6 +30,8 @@ struct SemanticCacheEntry {
   std::string model_id;
   std::int64_t last_access_ns = 0;
   std::string cache_namespace;
+  /// `EmbeddingProvider::identity()` of the embedder that produced `embedding`.
+  std::string embedder_id;
 };
 
 /// Paraphrase-tolerant tier keyed by embedding similarity.
@@ -39,14 +50,17 @@ class SemanticCacheIndex {
     bool above_threshold = false;
   };
 
+  /// Best entry for the same model, namespace, and embedder identity.
   LookupResult lookup(const std::vector<float>& query_embedding,
                       const std::string& model_id,
-                      const std::string& cache_namespace = {}) const;
+                      const std::string& cache_namespace = {},
+                      const std::string& embedder_id = {}) const;
 
   void insert(const std::vector<float>& embedding,
               const std::string& model_id,
               std::vector<std::uint8_t> output,
-              const std::string& cache_namespace = {});
+              const std::string& cache_namespace = {},
+              const std::string& embedder_id = {});
 
   void clear();
   std::size_t size() const;
@@ -75,6 +89,8 @@ class BruteForceEmbeddingProvider : public EmbeddingProvider {
 
   std::vector<float> embed(const std::string& text) const override;
   std::size_t dimension() const override;
+  /// `"continuum/char-ngram-v1:<dim>"`.
+  std::string identity() const override;
 
  private:
   std::size_t dim_;

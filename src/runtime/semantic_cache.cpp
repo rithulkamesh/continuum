@@ -13,7 +13,8 @@ SemanticCacheIndex::SemanticCacheIndex(std::size_t max_entries,
 SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
     const std::vector<float>& query_embedding,
     const std::string& model_id,
-    const std::string& cache_namespace) const {
+    const std::string& cache_namespace,
+    const std::string& embedder_id) const {
   std::lock_guard<std::mutex> lock(mu_);
 
   LookupResult best;
@@ -21,6 +22,7 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
   for (auto& entry : entries_) {
     if (entry.model_id != model_id) continue;
     if (entry.cache_namespace != cache_namespace) continue;
+    if (entry.embedder_id != embedder_id) continue;
     if (entry.embedding.size() != query_embedding.size()) continue;
 
     float sim = cosine_similarity(query_embedding, entry.embedding);
@@ -42,7 +44,8 @@ SemanticCacheIndex::LookupResult SemanticCacheIndex::lookup(
 void SemanticCacheIndex::insert(const std::vector<float>& embedding,
                                 const std::string& model_id,
                                 std::vector<std::uint8_t> output,
-                                const std::string& cache_namespace) {
+                                const std::string& cache_namespace,
+                                const std::string& embedder_id) {
   std::lock_guard<std::mutex> lock(mu_);
   if (max_entries_ == 0) {
     return;
@@ -63,6 +66,7 @@ void SemanticCacheIndex::insert(const std::vector<float>& embedding,
   entry.cached_output = std::move(output);
   entry.last_access_ns = static_cast<std::int64_t>(++clock_);
   entry.cache_namespace = cache_namespace;
+  entry.embedder_id = embedder_id;
   entries_.push_back(std::move(entry));
 }
 
@@ -83,7 +87,8 @@ std::size_t SemanticCacheIndex::estimated_bytes() const {
   for (const auto& entry : entries_) {
     total += sizeof(SemanticCacheEntry);
     total += entry.embedding.size() * sizeof(float);
-    total += entry.cached_output.size() + entry.model_id.size() + entry.cache_namespace.size();
+    total += entry.cached_output.size() + entry.model_id.size() + entry.cache_namespace.size() +
+             entry.embedder_id.size();
   }
   return total;
 }
@@ -147,5 +152,9 @@ std::vector<float> BruteForceEmbeddingProvider::embed(
 }
 
 std::size_t BruteForceEmbeddingProvider::dimension() const { return dim_; }
+
+std::string BruteForceEmbeddingProvider::identity() const {
+  return "continuum/char-ngram-v1:" + std::to_string(dim_);
+}
 
 }  // namespace continuum::runtime

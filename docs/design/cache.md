@@ -34,6 +34,60 @@ Correctness requires both to align. If backend state was derived from a differen
 
 Both paths emit the same runtime metrics so benchmark comparisons stay backend-agnostic.
 
+## Semantic tier
+
+The semantic tier (`SemanticCacheIndex`) returns a cached output when a new
+prompt is *close enough* to an earlier one, catching paraphrases the exact
+memo tier misses.
+
+**Key.** An entry matches a lookup only when all of these are equal: model id,
+cache namespace, and **embedder identity**. Among matching entries the highest
+cosine similarity wins, and it is served only if it is at least
+`similarity_threshold` (default `0.85`).
+
+**Where vectors come from.** A session embeds the concatenated string inputs
+of each `TokenOp` with its `EmbeddingProvider` (`Session.set_embedding_provider`).
+The provider is an interface, `embed(text)`, `dimension()`, `identity()`,
+implementable in C++ or by subclassing `continuum._native.EmbeddingProvider` in
+Python. `continuum.embeddings` ships three:
+
+| Provider | Use |
+|----------|-----|
+| `CallableEmbeddingProvider(fn, dimension, identity)` | any local model, e.g. `SentenceTransformer(...).encode` |
+| `OpenAICompatibleEmbeddingProvider(base_url, model)` | a hosted `/v1/embeddings` endpoint (OpenAI, vLLM, Ollama) |
+| `PrecomputedEmbeddingProvider(vectors, identity)` | vectors computed ahead of time, for reproducible runs and evals |
+
+The built-in `BruteForceEmbeddingProvider(dim)` (identity
+`continuum/char-ngram-v1:<dim>`) hashes character 1–3-grams. It is
+deterministic and dependency-free, but lexical: it scores shared *spelling*,
+not shared meaning. Use a real model for production paraphrase matching.
+
+```python
+from continuum.embeddings import CallableEmbeddingProvider
+from sentence_transformers import SentenceTransformer
+
+st = SentenceTransformer("all-MiniLM-L6-v2")
+session.set_embedding_provider(CallableEmbeddingProvider(
+    lambda text: st.encode(text, normalize_embeddings=True).tolist(),
+    dimension=384,
+    identity="sentence-transformers/all-MiniLM-L6-v2",
+))
+```
+
+**Why identity is in the key.** Cosine similarity between vectors from two
+different embedders is meaningless, and two embedders can even share a
+dimension. Storing `identity()` with each entry means changing the embedder
+(or its version) starts a fresh key space instead of producing silent false
+hits. Change the identity string whenever the vectors would change.
+
+**Reproducibility.** A run is reproducible when the embedder is deterministic
+and its identity pins the exact model and preprocessing. For evaluations, embed
+the dataset once and replay it through `PrecomputedEmbeddingProvider`.
+
+**Threshold.** How often a near-miss is served wrongly depends on the embedder
+and the threshold; `benchmarks/reports/semantic-false-hits.md` measures that
+trade-off.
+
 ## Eviction and memory bounds
 
 Every tier is bounded. Capacities are set at construction; a capacity of `0`

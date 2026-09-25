@@ -132,7 +132,8 @@ std::vector<continuum::Value> Session::run(
           }
           if (!prompt_text.empty()) {
             auto embedding = embedder_->embed(prompt_text);
-            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id, cache_namespace_);
+            auto sem_result = semantic_cache_->lookup(embedding, payload->model_id, cache_namespace_,
+                                                     embedder_->identity());
             if (sem_result.above_threshold) {
               semantic_hit = true;
               rec.semantic_hit = true;

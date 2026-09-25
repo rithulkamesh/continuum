@@ -490,6 +490,21 @@ py::object ValueToPy(const continuum::Value& v) {
   if (const auto* i = std::get_if<int64_t>(&v)) return py::int_(*i);
   return py::none();
 }
+// Lets Python subclasses of EmbeddingProvider (local models, hosted endpoints,
+// precomputed vectors) plug into the semantic and memory-graph tiers.
+class PyEmbeddingProvider : public continuum::runtime::EmbeddingProvider {
+ public:
+  std::vector<float> embed(const std::string& text) const override {
+    PYBIND11_OVERRIDE_PURE(std::vector<float>, continuum::runtime::EmbeddingProvider, embed, text);
+  }
+  std::size_t dimension() const override {
+    PYBIND11_OVERRIDE_PURE(std::size_t, continuum::runtime::EmbeddingProvider, dimension);
+  }
+  std::string identity() const override {
+    PYBIND11_OVERRIDE_PURE(std::string, continuum::runtime::EmbeddingProvider, identity);
+  }
+};
+
 // Model id DurableAgent uses when VLLM_BASE_URL points at a live server.
 constexpr const char* kDurableVllmModel = "vllm/gemma4";
 
@@ -832,7 +847,8 @@ void bind_runtime(py::module_& m) {
              auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
              return new continuum::runtime::Session(id, reg, max_cache);
            }),
-           py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192)
+           py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192,
+           py::keep_alive<1, 3>())  // Session holds a reference to the registry
       .def("run", [](continuum::runtime::Session& self, const continuum::ir::Graph& graph,
                      const std::unordered_map<continuum::ir::NodeId, continuum::Value>& inputs) {
              return self.run(graph, inputs);
@@ -851,6 +867,35 @@ void bind_runtime(py::module_& m) {
       .def("reset_metrics", &continuum::runtime::Session::reset_metrics)
       .def("save_cache_metadata", &continuum::runtime::Session::save_cache_metadata)
       .def("load_cache_metadata", &continuum::runtime::Session::load_cache_metadata)
+      .def("generate", [](continuum::runtime::Session& self, const std::vector<std::string>& prompt_parts,
+                          const std::string& model_id, std::int32_t max_tokens, float temperature,
+                          const std::string& op_name) -> py::object {
+             // One PromptOp per part feeding a single TokenOp: the smallest graph
+             // that exercises every reuse tier from Python.
+             continuum::ir::Graph g;
+             std::unordered_map<continuum::ir::NodeId, continuum::Value> inputs;
+             continuum::ir::Node tok;
+             tok.kind = continuum::ir::NodeKind::TokenOp;
+             tok.debug_name = "generate";
+             tok.payload = continuum::ir::TokenOpPayload{op_name, model_id, temperature, max_tokens};
+             for (std::size_t i = 0; i < prompt_parts.size(); ++i) {
+               continuum::ir::Node p;
+               p.kind = continuum::ir::NodeKind::PromptOp;
+               p.debug_name = "prompt" + std::to_string(i);
+               const auto pid = g.add_node(p);
+               inputs[pid] = continuum::Value{prompt_parts[i]};
+               tok.inputs.push_back(pid);
+             }
+             g.add_node(tok);
+             std::vector<continuum::Value> out;
+             {
+               py::gil_scoped_release release;
+               out = self.run(g, inputs);
+             }
+             return out.empty() ? py::none() : ValueToPy(out.back());
+           },
+           py::arg("prompt_parts"), py::arg("model_id"), py::arg("max_tokens") = 128,
+           py::arg("temperature") = 0.0f, py::arg("op_name") = "generate")
       .def("cache_size", [](const continuum::runtime::Session& self) { return self.cache().size(); })
       .def("cache_stats", [](const continuum::runtime::Session& self) {
              py::dict out;
@@ -880,7 +925,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* mt = memo_table_obj.cast<continuum::runtime::MemoTable*>();
              self.set_memo_table(mt);
-           }, py::arg("memo_table"))
+           }, py::arg("memo_table"), py::keep_alive<1, 2>())
       .def("set_semantic_cache", [](continuum::runtime::Session& self, py::object sc_obj) {
              if (sc_obj.is_none()) {
                self.set_semantic_cache(nullptr);
@@ -888,7 +933,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* sc = sc_obj.cast<continuum::runtime::SemanticCacheIndex*>();
              self.set_semantic_cache(sc);
-           }, py::arg("semantic_cache"))
+           }, py::arg("semantic_cache"), py::keep_alive<1, 2>())
       .def("set_embedding_provider", [](continuum::runtime::Session& self, py::object ep_obj) {
              if (ep_obj.is_none()) {
                self.set_embedding_provider(nullptr);
@@ -896,7 +941,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* ep = ep_obj.cast<continuum::runtime::EmbeddingProvider*>();
              self.set_embedding_provider(ep);
-           }, py::arg("embedding_provider"))
+           }, py::arg("embedding_provider"), py::keep_alive<1, 2>())
       .def("set_layer_cache", [](continuum::runtime::Session& self, py::object lc_obj) {
              if (lc_obj.is_none()) {
                self.set_layer_cache(nullptr);
@@ -904,7 +949,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* lc = lc_obj.cast<continuum::runtime::LayerKVCacheIndex*>();
              self.set_layer_cache(lc);
-           }, py::arg("layer_cache"))
+           }, py::arg("layer_cache"), py::keep_alive<1, 2>())
       .def("set_memory_graph", [](continuum::runtime::Session& self, py::object mg_obj) {
              if (mg_obj.is_none()) {
                self.set_memory_graph(nullptr);
@@ -912,7 +957,7 @@ void bind_runtime(py::module_& m) {
              }
              auto* mg = mg_obj.cast<continuum::runtime::MemoryGraphStore*>();
              self.set_memory_graph(mg);
-           }, py::arg("memory_graph"));
+           }, py::arg("memory_graph"), py::keep_alive<1, 2>());
 
   // End-to-end check that LayerKVCacheIndex + MemoryGraphStore are wired into the
   // Session/Interpreter execution path. Runs the same TokenOp graph twice (no
@@ -1225,26 +1270,28 @@ void bind_runtime(py::module_& m) {
       .def("set_similarity_threshold", &continuum::runtime::SemanticCacheIndex::set_similarity_threshold)
       .def("lookup", [](const continuum::runtime::SemanticCacheIndex& self,
                           py::list query_embedding, const std::string& model_id,
-                          const std::string& cache_namespace) -> py::dict {
+                          const std::string& cache_namespace, const std::string& embedder_id) -> py::dict {
              std::vector<float> emb;
              for (auto x : query_embedding) emb.push_back(py::cast<float>(x));
-             auto r = self.lookup(emb, model_id, cache_namespace);
+             auto r = self.lookup(emb, model_id, cache_namespace, embedder_id);
              py::dict d;
              d["output"] = py::bytes(reinterpret_cast<const char*>(r.output.data()), r.output.size());
              d["similarity"] = r.similarity;
              d["above_threshold"] = r.above_threshold;
              return d;
-           }, py::arg("query_embedding"), py::arg("model_id"), py::arg("cache_namespace") = "")
+           }, py::arg("query_embedding"), py::arg("model_id"), py::arg("cache_namespace") = "",
+           py::arg("embedder_id") = "")
       .def("insert", [](continuum::runtime::SemanticCacheIndex& self,
                           py::list embedding, const std::string& model_id,
-                          py::bytes output_bytes, const std::string& cache_namespace) {
+                          py::bytes output_bytes, const std::string& cache_namespace,
+                          const std::string& embedder_id) {
              std::vector<float> emb;
              for (auto x : embedding) emb.push_back(py::cast<float>(x));
              std::string bytes(output_bytes);
              std::vector<std::uint8_t> out(bytes.begin(), bytes.end());
-             self.insert(emb, model_id, std::move(out), cache_namespace);
+             self.insert(emb, model_id, std::move(out), cache_namespace, embedder_id);
            }, py::arg("embedding"), py::arg("model_id"), py::arg("output_bytes"),
-           py::arg("cache_namespace") = "")
+           py::arg("cache_namespace") = "", py::arg("embedder_id") = "")
       .def("clear", &continuum::runtime::SemanticCacheIndex::clear)
       .def_static("cosine_similarity", [](py::list a, py::list b) {
         std::vector<float> va, vb;
@@ -1430,11 +1477,15 @@ void bind_runtime(py::module_& m) {
   }, py::arg("cost_per_token_ms") = 2.0, py::arg("num_steps") = 20,
      py::arg("prefix_tokens") = 30);
 
-  py::class_<continuum::runtime::EmbeddingProvider, std::unique_ptr<continuum::runtime::EmbeddingProvider, py::nodelete>>(m, "EmbeddingProvider");
+  py::class_<continuum::runtime::EmbeddingProvider, PyEmbeddingProvider>(m, "EmbeddingProvider")
+      .def(py::init<>())
+      .def("embed", &continuum::runtime::EmbeddingProvider::embed, py::arg("text"))
+      .def("dimension", &continuum::runtime::EmbeddingProvider::dimension)
+      .def("identity", &continuum::runtime::EmbeddingProvider::identity);
 
   py::class_<continuum::runtime::BruteForceEmbeddingProvider, continuum::runtime::EmbeddingProvider>(m, "BruteForceEmbeddingProvider")
-      .def(py::init([](std::size_t dim) { return new continuum::runtime::BruteForceEmbeddingProvider(dim); }),
-           py::arg("dim") = 64)
+      .def(py::init<std::size_t>(), py::arg("dim") = 64)
+      .def("identity", &continuum::runtime::BruteForceEmbeddingProvider::identity)
       .def("embed", [](const continuum::runtime::BruteForceEmbeddingProvider& self, const std::string& text) {
              return self.embed(text);
            }, py::arg("text"))
