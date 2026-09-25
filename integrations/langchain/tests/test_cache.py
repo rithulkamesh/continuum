@@ -44,7 +44,9 @@ def test_llm_repeat_served_by_cache() -> None:
 def test_chat_generations_round_trip_and_tool_calls_skipped() -> None:
     cache = ContinuumCache()
     msg = AIMessage(content="hello", response_metadata={"model": "x"})
-    cache.update("p", "llm", [ChatGeneration(message=msg, generation_info={"finish_reason": "stop"})])
+    cache.update(
+        "p", "llm", [ChatGeneration(message=msg, generation_info={"finish_reason": "stop"})]
+    )
     (got,) = cache.lookup("p", "llm") or []
     assert isinstance(got, ChatGeneration)
     assert got.message.content == "hello"
@@ -63,7 +65,9 @@ def test_chat_generations_round_trip_and_tool_calls_skipped() -> None:
 
 def test_chat_model_tool_calls_never_cached() -> None:
     cache = ContinuumCache()
-    tool_msg = AIMessage(content="", tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "c1"}])
+    tool_msg = AIMessage(
+        content="", tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "c1"}]
+    )
     model = FakeMessagesListChatModel(responses=[tool_msg, tool_msg], cache=cache)
     model.invoke("find x")
     model.invoke("find x")
@@ -74,8 +78,10 @@ def test_chat_model_tool_calls_never_cached() -> None:
 def test_semantic_tier() -> None:
     with pytest.raises(ValueError):
         ContinuumCache(semantic_threshold=0.9)
-    emb = PrecomputedEmbeddingProvider({"reset password": [1.0, 0.0], "forgot password": [1.0, 0.0],
-                                        "refund policy": [0.0, 1.0]}, "test")
+    emb = PrecomputedEmbeddingProvider(
+        {"reset password": [1.0, 0.0], "forgot password": [1.0, 0.0], "refund policy": [0.0, 1.0]},
+        "test",
+    )
     cache = ContinuumCache(semantic_threshold=0.95, embedder=emb)
     cache.update("reset password", "llm", [Generation(text="use the reset link")])
     assert cache.lookup("forgot password", "llm")[0].text == "use the reset link"  # type: ignore[index]

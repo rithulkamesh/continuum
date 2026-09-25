@@ -62,7 +62,9 @@ def test_events_cover_every_tier_and_node() -> None:
     tiers = [e["tier"] for e in first if e["kind"] == "tier_lookup"]
     assert tiers == ["memo", "semantic", "prefix_kv", "layer_kv", "memory_graph"]
     assert not any(e["hit"] for e in first if e["kind"] == "tier_lookup")
-    token_node = [e for e in first if e["kind"] == "node_execution" and e["node_kind"] == "TokenOp"][0]
+    token_node = [
+        e for e in first if e["kind"] == "node_execution" and e["node_kind"] == "TokenOp"
+    ][0]
     assert token_node["served_by"] == "backend"
     assert token_node["backend"] == "fake"
     assert token_node["model_id"] == "fake/m"
@@ -73,7 +75,9 @@ def test_events_cover_every_tier_and_node() -> None:
     s.generate(["the shared system prompt. question one"], "fake/m", 4)  # exact repeat
     memo = [e for e in events if e["kind"] == "tier_lookup"]
     assert [e["tier"] for e in memo] == ["memo"] and memo[0]["hit"]
-    token_node = [e for e in events if e["node_kind"] == "TokenOp" and e["kind"] == "node_execution"][0]
+    token_node = [
+        e for e in events if e["node_kind"] == "TokenOp" and e["kind"] == "node_execution"
+    ][0]
     assert token_node["served_by"] == "memo"
     assert token_node["tokens_saved"] == token_node["total_tokens"] > 0
 
@@ -87,7 +91,9 @@ def test_callback_errors_do_not_break_execution() -> None:
     assert s.generate(["x"], "fake/m", 4) is not None
 
 
-def _providers() -> tuple[TracerProvider, InMemorySpanExporter, MeterProvider, InMemoryMetricReader]:
+def _providers() -> tuple[
+    TracerProvider, InMemorySpanExporter, MeterProvider, InMemoryMetricReader
+]:
     exporter = InMemorySpanExporter()
     tp = TracerProvider()
     tp.add_span_processor(SimpleSpanProcessor(exporter))
@@ -130,7 +136,9 @@ def test_spans_and_metrics() -> None:
     assert len(by_parent[token_spans[0].context.span_id]) == 5
 
     points = _metric_points(reader)
-    lookups = {p.attributes["continuum.reuse.tier"]: p.value for p in points["continuum.reuse.lookups"]}
+    lookups = {
+        p.attributes["continuum.reuse.tier"]: p.value for p in points["continuum.reuse.lookups"]
+    }
     assert lookups["memo"] == 2 and lookups["prefix_kv"] == 1
     hits = {p.attributes["continuum.reuse.tier"]: p.value for p in points["continuum.reuse.hits"]}
     assert hits == {"memo": 1}

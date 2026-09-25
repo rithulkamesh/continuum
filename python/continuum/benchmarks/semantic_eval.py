@@ -133,9 +133,7 @@ def evaluate(
             )
         )
 
-    by_label = {
-        label: [s for s, p in zip(sims, pairs) if p.label == label] for label in LABELS
-    }
+    by_label = {label: [s for s, p in zip(sims, pairs) if p.label == label] for label in LABELS}
     return {
         "embedder": identity,
         "pairs": counts,

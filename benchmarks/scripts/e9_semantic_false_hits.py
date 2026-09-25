@@ -53,17 +53,25 @@ def main() -> None:
     result["zero_false_hit_threshold"] = safest_threshold(result, 0.0)
 
     default_id = BruteForceEmbeddingProvider(64).identity()
-    slug = "" if result["embedder"] == default_id else "_" + re.sub(r"[^a-z0-9]+", "-", result["embedder"].lower()).strip("-")
+    slug = (
+        ""
+        if result["embedder"] == default_id
+        else "_" + re.sub(r"[^a-z0-9]+", "-", result["embedder"].lower()).strip("-")
+    )
     out = ROOT / "benchmarks" / "data" / f"e9_semantic_false_hits{slug}.json"
     out.write_text(json.dumps(result, indent=2) + "\n")
 
     print(f"E9: semantic false hits  embedder={result['embedder']}  pairs={result['pairs']}")
     for label, s in result["similarity"].items():
-        print(f"  similarity {label:<10} min={s['min']:.3f} mean={s['mean']:.3f} max={s['max']:.3f}")
+        print(
+            f"  similarity {label:<10} min={s['min']:.3f} mean={s['mean']:.3f} max={s['max']:.3f}"
+        )
     print("  thr   prec   recall  false-hit  near-miss  unrelated  cache-wrong")
     for r in result["thresholds"]:
         prec = "  -  " if r["precision"] is None else f"{r['precision']:.3f}"
-        cw = "  -" if r["cache_wrong_answer_rate"] is None else f"{r['cache_wrong_answer_rate']:.3f}"
+        cw = (
+            "  -" if r["cache_wrong_answer_rate"] is None else f"{r['cache_wrong_answer_rate']:.3f}"
+        )
         mark = "  <- runtime default" if r["threshold"] == DEFAULT_RUNTIME_THRESHOLD else ""
         print(
             f"  {r['threshold']:.2f}  {prec}  {r['recall']:.3f}   {r['false_hit_rate']:.3f}"

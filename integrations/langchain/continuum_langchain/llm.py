@@ -49,7 +49,11 @@ class ContinuumLLM(LLM):
 
     @property
     def _identifying_params(self) -> dict[str, Any]:
-        return {"model_id": self.model_id, "max_tokens": self.max_tokens, "temperature": self.temperature}
+        return {
+            "model_id": self.model_id,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
 
     def _call(
         self,

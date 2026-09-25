@@ -36,7 +36,9 @@ class FakeS3:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
 
-    def put_object(self, Bucket: str, Key: str, Body: bytes, IfNoneMatch: str | None = None) -> None:  # noqa: N803
+    def put_object(
+        self, Bucket: str, Key: str, Body: bytes, IfNoneMatch: str | None = None
+    ) -> None:  # noqa: N803
         if IfNoneMatch == "*" and (Bucket, Key) in self.objects:
             raise _ClientError("PreconditionFailed")
         self.objects[(Bucket, Key)] = bytes(Body)
@@ -66,7 +68,11 @@ class FakeS3:
         class Paginator:
             def paginate(self, Bucket: str, Prefix: str) -> list[dict[str, Any]]:  # noqa: N803
                 keys = [k for (b, k) in objects if b == Bucket and k.startswith(Prefix)]
-                return [{"Contents": [{"Key": k} for k in keys[:1]]}, {"Contents": [{"Key": k} for k in keys[1:]]}, {}]
+                return [
+                    {"Contents": [{"Key": k} for k in keys[:1]]},
+                    {"Contents": [{"Key": k} for k in keys[1:]]},
+                    {},
+                ]
 
         return Paginator()
 
@@ -88,7 +94,9 @@ class FakeGCS:
             def __init__(self, blob_name: str) -> None:
                 self.name = blob_name
 
-            def upload_from_string(self, data: bytes, if_generation_match: int | None = None) -> None:
+            def upload_from_string(
+                self, data: bytes, if_generation_match: int | None = None
+            ) -> None:
                 if if_generation_match == 0 and self.name in objects:
                     raise _GcsError(412)
                 objects[self.name] = bytes(data)
@@ -171,7 +179,11 @@ def test_cloud_stores_propagate_unexpected_errors() -> None:
 
     gcs = GCSStore("b", client=FakeGCS())
     gcs.bucket = type("B", (), {"blob": lambda self, n: _raising_blob()})()
-    for call in (lambda: gcs.put_if_absent("k", b""), lambda: gcs.get("k"), lambda: gcs.delete("k")):
+    for call in (
+        lambda: gcs.put_if_absent("k", b""),
+        lambda: gcs.get("k"),
+        lambda: gcs.delete("k"),
+    ):
         with pytest.raises(_GcsError):
             call()
 

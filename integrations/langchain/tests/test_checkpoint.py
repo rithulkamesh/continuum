@@ -26,7 +26,9 @@ def _graph(llm: ContinuumLLM, saver: ContinuumCheckpointSaver, interrupt: bool =
         return {"notes": [f"outline:{llm.invoke('outline ' + state['topic'])[:20]}"]}
 
     def draft(state: State) -> dict[str, Any]:
-        return {"notes": [f"draft:{llm.invoke('draft ' + state['topic'] + ' ' + state['notes'][-1])}"]}
+        return {
+            "notes": [f"draft:{llm.invoke('draft ' + state['topic'] + ' ' + state['notes'][-1])}"]
+        }
 
     g = StateGraph(State)
     g.add_node("research", research)
@@ -59,7 +61,9 @@ def test_resume_in_fresh_process_starts_warm(tmp_path: Path) -> None:
     assert len(history) >= 4
     assert history[0].checkpoint["id"] > history[-1].checkpoint["id"]  # newest first
     assert list(saver2.list(cfg, limit=2)).__len__() == 2
-    assert all(t.metadata.get("source") == "loop" for t in saver2.list(cfg, filter={"source": "loop"}))
+    assert all(
+        t.metadata.get("source") == "loop" for t in saver2.list(cfg, filter={"source": "loop"})
+    )
     assert saver2.get_tuple({"configurable": {"thread_id": "missing"}}) is None
 
 
@@ -80,10 +84,21 @@ def test_fork_keeps_lineage_and_branches_independently(tmp_path: Path) -> None:
     assert forked["notes"][:2] == original["notes"][:2]
     fork_tuple = saver.get_tuple(fork_cfg)
     assert fork_tuple is not None and fork_tuple.parent_config is not None
-    assert fork_tuple.parent_config["configurable"]["checkpoint_id"] == before_draft.config["configurable"]["checkpoint_id"]
+    assert (
+        fork_tuple.parent_config["configurable"]["checkpoint_id"]
+        == before_draft.config["configurable"]["checkpoint_id"]
+    )
     # The original branch is untouched.
-    orig_final = saver.get_tuple({"configurable": {"thread_id": "t",
-                                                  "checkpoint_id": list(graph.get_state_history(cfg))[-1].config["configurable"]["checkpoint_id"]}})
+    orig_final = saver.get_tuple(
+        {
+            "configurable": {
+                "thread_id": "t",
+                "checkpoint_id": list(graph.get_state_history(cfg))[-1].config["configurable"][
+                    "checkpoint_id"
+                ],
+            }
+        }
+    )
     assert orig_final is not None
     ids = [t.checkpoint["id"] for t in saver.list(cfg)]
     assert len(ids) == len(set(ids))

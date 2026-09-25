@@ -117,7 +117,9 @@ def run_benchmark(model: str, prefix_chars: int, max_tokens: int, trials: int) -
         "trials": trials,
         "cold": cold_res,
         "warm": warm_res,
-        "p50_speedup": round(cold_res["p50_ms"] / warm_res["p50_ms"], 3) if warm_res["p50_ms"] else None,
+        "p50_speedup": round(cold_res["p50_ms"] / warm_res["p50_ms"], 3)
+        if warm_res["p50_ms"]
+        else None,
     }
 
 
@@ -141,11 +143,15 @@ class _SimulatedServer:
                     shared = len(os.path.commonprefix([prompt, outer.previous]))
                     outer.previous = prompt
                 time.sleep(0.002 * (len(prompt) - shared) / 10)
-                raw = json.dumps({
-                    "choices": [{"index": 0, "text": " ok", "finish_reason": "stop"}],
-                    "usage": {"prompt_tokens": len(prompt) // 4,
-                              "prompt_tokens_details": {"cached_tokens": shared // 4}},
-                }).encode()
+                raw = json.dumps(
+                    {
+                        "choices": [{"index": 0, "text": " ok", "finish_reason": "stop"}],
+                        "usage": {
+                            "prompt_tokens": len(prompt) // 4,
+                            "prompt_tokens_details": {"cached_tokens": shared // 4},
+                        },
+                    }
+                ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
@@ -167,7 +173,9 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     ap.add_argument("--prefix-chars", type=int, default=8000)
     ap.add_argument("--max-tokens", type=int, default=16)
     ap.add_argument("--trials", type=int, default=20)
-    ap.add_argument("--self-test", action="store_true", help="simulated server; plumbing check only")
+    ap.add_argument(
+        "--self-test", action="store_true", help="simulated server; plumbing check only"
+    )
     args = ap.parse_args(argv)
 
     stub = None
@@ -189,12 +197,16 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         else:
             os.environ["VLLM_BASE_URL"] = previous
     result["simulated"] = bool(args.self_test)
-    print(f"E10 vLLM prefix reuse  model={args.model} prefix={args.prefix_chars} chars  trials={args.trials}"
-          + ("  [SIMULATED SERVER: plumbing check, not a result]" if args.self_test else ""))
+    print(
+        f"E10 vLLM prefix reuse  model={args.model} prefix={args.prefix_chars} chars  trials={args.trials}"
+        + ("  [SIMULATED SERVER: plumbing check, not a result]" if args.self_test else "")
+    )
     for arm in ("cold", "warm"):
         r = result[arm]
-        print(f"  {arm:<5} p50={r['p50_ms']:>9.1f} ms  p95={r['p95_ms']:>9.1f} ms  "
-              f"server cached tokens={r['server_cached_tokens']}")
+        print(
+            f"  {arm:<5} p50={r['p50_ms']:>9.1f} ms  p95={r['p95_ms']:>9.1f} ms  "
+            f"server cached tokens={r['server_cached_tokens']}"
+        )
     print(f"  p50 speedup (cold / warm): {result['p50_speedup']}")
     if stub is None:
         DATA.write_text(json.dumps(result, indent=2) + "\n")

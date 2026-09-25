@@ -119,12 +119,16 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
 
     # -- read ------------------------------------------------------------------------
 
-    def _tuple(self, thread_id: str, ns: str, checkpoint_id: str, record: dict[str, Any]) -> CheckpointTuple:
+    def _tuple(
+        self, thread_id: str, ns: str, checkpoint_id: str, record: dict[str, Any]
+    ) -> CheckpointTuple:
         checkpoint: Checkpoint = self.serde.loads_typed(_typed_from_json(record["checkpoint"]))
         values: dict[str, Any] = {}
         for channel, version in checkpoint["channel_versions"].items():
             try:
-                typed = _typed_from_json(json.loads(self.store.get(self._blob_key(thread_id, ns, channel, version))))
+                typed = _typed_from_json(
+                    json.loads(self.store.get(self._blob_key(thread_id, ns, channel, version)))
+                )
             except KeyError:
                 continue
             if typed[0] != "empty":
@@ -132,14 +136,28 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
         writes = []
         for key in self.store.list(self._writes_prefix(thread_id, ns, checkpoint_id)):
             w = json.loads(self.store.get(key))
-            writes.append((w["task_id"], w["channel"], self.serde.loads_typed(_typed_from_json(w["value"]))))
+            writes.append(
+                (w["task_id"], w["channel"], self.serde.loads_typed(_typed_from_json(w["value"])))
+            )
         parent = record.get("parent")
         return CheckpointTuple(
-            config={"configurable": {"thread_id": thread_id, "checkpoint_ns": ns, "checkpoint_id": checkpoint_id}},
+            config={
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": ns,
+                    "checkpoint_id": checkpoint_id,
+                }
+            },
             checkpoint={**checkpoint, "channel_values": values},
             metadata=self.serde.loads_typed(_typed_from_json(record["metadata"])),
             parent_config=(
-                {"configurable": {"thread_id": thread_id, "checkpoint_ns": ns, "checkpoint_id": parent}}
+                {
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "checkpoint_ns": ns,
+                        "checkpoint_id": parent,
+                    }
+                }
                 if parent
                 else None
             ),
@@ -148,7 +166,7 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
 
     def _checkpoint_ids(self, thread_id: str, ns: str) -> list[str]:
         prefix = f"{self._base(thread_id, ns)}/checkpoints/"
-        return sorted((_dec(k[len(prefix):]) for k in self.store.list(prefix)), reverse=True)
+        return sorted((_dec(k[len(prefix) :]) for k in self.store.list(prefix)), reverse=True)
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id: str = config["configurable"]["thread_id"]
@@ -187,7 +205,7 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
         before_id = get_checkpoint_id(before) if before else None
         for thread_id in threads:
             base = f"{self.prefix}/{_enc(thread_id)}/"
-            namespaces = sorted({_dec(k[len(base):].split("/")[0]) for k in self.store.list(base)})
+            namespaces = sorted({_dec(k[len(base) :].split("/")[0]) for k in self.store.list(base)})
             for ns in namespaces:
                 if want_ns is not None and ns != want_ns:
                     continue
@@ -196,7 +214,9 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
                         continue
                     if before_id and checkpoint_id >= before_id:
                         continue
-                    record = json.loads(self.store.get(self._checkpoint_key(thread_id, ns, checkpoint_id)))
+                    record = json.loads(
+                        self.store.get(self._checkpoint_key(thread_id, ns, checkpoint_id))
+                    )
                     tup = self._tuple(thread_id, ns, checkpoint_id, record)
                     if filter and not all(tup.metadata.get(k) == v for k, v in filter.items()):
                         continue
@@ -222,7 +242,8 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
         for channel, version in new_versions.items():
             typed = self.serde.dumps_typed(values[channel]) if channel in values else ("empty", b"")
             self.store.put_if_absent(
-                self._blob_key(thread_id, ns, channel, version), json.dumps(_typed_to_json(typed)).encode()
+                self._blob_key(thread_id, ns, channel, version),
+                json.dumps(_typed_to_json(typed)).encode(),
             )
         kv_key = None
         kv = self._snapshot_kv()
@@ -231,14 +252,22 @@ class ContinuumCheckpointSaver(BaseCheckpointSaver[str]):
             self.store.put_if_absent(kv_key, kv)
         record = {
             "checkpoint": _typed_to_json(self.serde.dumps_typed(c)),
-            "metadata": _typed_to_json(self.serde.dumps_typed(get_checkpoint_metadata(config, metadata))),
+            "metadata": _typed_to_json(
+                self.serde.dumps_typed(get_checkpoint_metadata(config, metadata))
+            ),
             "parent": config["configurable"].get("checkpoint_id"),
             "kv": kv_key,
         }
         self.store.put_if_absent(
             self._checkpoint_key(thread_id, ns, checkpoint["id"]), json.dumps(record).encode()
         )
-        return {"configurable": {"thread_id": thread_id, "checkpoint_ns": ns, "checkpoint_id": checkpoint["id"]}}
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": ns,
+                "checkpoint_id": checkpoint["id"],
+            }
+        }
 
     def put_writes(
         self,

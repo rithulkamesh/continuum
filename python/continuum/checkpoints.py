@@ -198,7 +198,9 @@ class S3Store(CheckpointStore):
 
     def put_if_absent(self, key: str, data: bytes) -> bool:
         try:
-            self.client.put_object(Bucket=self.bucket, Key=self._key(key), Body=data, IfNoneMatch="*")
+            self.client.put_object(
+                Bucket=self.bucket, Key=self._key(key), Body=data, IfNoneMatch="*"
+            )
             return True
         except Exception as exc:
             if _error_code(exc) in ("PreconditionFailed", "ConditionalRequestConflict", "412"):
@@ -419,14 +421,18 @@ class CheckpointLog:
         self._remember(cid, checkpoint)
         return cid
 
-    def fork(self, checkpoint_id: str, node_id: int, new_value: Any, *, label: str | None = None) -> str:
+    def fork(
+        self, checkpoint_id: str, node_id: int, new_value: Any, *, label: str | None = None
+    ) -> str:
         """Commit a fork of ``checkpoint_id`` with ``node_id`` set to ``new_value``.
 
         The new record's ``parent`` is the source checkpoint and its ``fork``
         field names the edited node, so lineage survives in the manifest.
         """
         forked = _NativeDurableAgent.fork(self.load(checkpoint_id), node_id, new_value)
-        return self.commit(forked, parent=checkpoint_id, label=label, fork={"node_id": int(node_id)})
+        return self.commit(
+            forked, parent=checkpoint_id, label=label, fork={"node_id": int(node_id)}
+        )
 
     # -- read --------------------------------------------------------------
 

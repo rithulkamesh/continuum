@@ -1,7 +1,7 @@
 """ContinuumCache as LangChain's LLM cache, against Continuum's offline FakeLLM.
 
-    pip install -e integrations/langchain
-    python integrations/langchain/examples/cache_example.py
+pip install -e integrations/langchain
+python integrations/langchain/examples/cache_example.py
 """
 
 from __future__ import annotations

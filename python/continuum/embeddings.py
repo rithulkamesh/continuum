@@ -55,9 +55,7 @@ class CallableEmbeddingProvider(EmbeddingProvider):
             the vectors would change (new model, new normalization, ...).
     """
 
-    def __init__(
-        self, fn: Callable[[str], Sequence[float]], dimension: int, identity: str
-    ) -> None:
+    def __init__(self, fn: Callable[[str], Sequence[float]], dimension: int, identity: str) -> None:
         super().__init__()
         if dimension <= 0:
             raise ValueError("dimension must be positive")

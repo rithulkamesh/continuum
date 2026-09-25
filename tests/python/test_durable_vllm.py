@@ -33,7 +33,7 @@ def _handler(stub: _Stub) -> type[BaseHTTPRequestHandler]:
             digest = zlib.crc32(body["prompt"].encode()) % 10_000
             # Non-ASCII + escapes exercise the shim's JSON string decoding;
             # the digest makes the reply depend on the whole prompt.
-            text = f"done: {head} #{digest} \u2713 \U0001f600 \"q\"\n"
+            text = f'done: {head} #{digest} \u2713 \U0001f600 "q"\n'
             stub.replies.append(text)
             payload = {
                 "object": "text_completion",
@@ -144,7 +144,9 @@ def test_prefix_state_survives_checkpoint_and_rewarms(
     rewarm = [r for r in server.requests[1:] if r["max_tokens"] == 1]
     assert len(rewarm) >= 1
     assert all(PROMPTS[0].split()[0] in r["prompt"] for r in rewarm)
-    token_nodes = [e for e in events if e["kind"] == "node_execution" and e["node_kind"] == "TokenOp"]
+    token_nodes = [
+        e for e in events if e["kind"] == "node_execution" and e["node_kind"] == "TokenOp"
+    ]
     assert len(token_nodes) == 2
     # The stub reports 4 cached prompt tokens; the backend surfaces them.
     assert all(e["tokens_saved"] == 4 and e["used_cached_state"] for e in token_nodes)

@@ -13,7 +13,14 @@ from langchain_core.outputs import ChatGeneration, Generation
 
 from continuum._native import EmbeddingProvider, MemoKey, MemoTable, SemanticCacheIndex
 
-_TOOL_MARKERS = ("'tools'", '"tools"', "'functions'", '"functions"', "'tool_choice'", '"tool_choice"')
+_TOOL_MARKERS = (
+    "'tools'",
+    '"tools"',
+    "'functions'",
+    '"functions"',
+    "'tool_choice'",
+    '"tool_choice"',
+)
 
 
 def _llm_key(llm_string: str) -> str:
@@ -25,7 +32,11 @@ def _has_tool_calls(generations: Sequence[Generation]) -> bool:
         if isinstance(gen, ChatGeneration):
             msg = gen.message
             extra = getattr(msg, "additional_kwargs", {}) or {}
-            if getattr(msg, "tool_calls", None) or extra.get("tool_calls") or extra.get("function_call"):
+            if (
+                getattr(msg, "tool_calls", None)
+                or extra.get("tool_calls")
+                or extra.get("function_call")
+            ):
                 return True
     return False
 
@@ -45,7 +56,9 @@ def _load(raw: bytes) -> list[Generation]:
     for item in json.loads(raw):
         if "message" in item:
             (message,) = messages_from_dict([item["message"]])
-            gens.append(ChatGeneration(message=message, generation_info=item.get("generation_info")))
+            gens.append(
+                ChatGeneration(message=message, generation_info=item.get("generation_info"))
+            )
         else:
             gens.append(Generation(text=item["text"], generation_info=item.get("generation_info")))
     return gens
@@ -102,7 +115,10 @@ class ContinuumCache(BaseCache):
             return _load(hit["output_bytes"])
         if self.semantic is not None and self.embedder is not None:
             r = self.semantic.lookup(
-                self.embedder.embed(prompt), _llm_key(llm_string), self.namespace, self.embedder.identity()
+                self.embedder.embed(prompt),
+                _llm_key(llm_string),
+                self.namespace,
+                self.embedder.identity(),
             )
             if r["above_threshold"]:
                 self.stats["semantic_hits"] += 1
@@ -118,7 +134,11 @@ class ContinuumCache(BaseCache):
         self.memo.insert(self._key(prompt, llm_string), data, self.memo.version())
         if self.semantic is not None and self.embedder is not None:
             self.semantic.insert(
-                self.embedder.embed(prompt), _llm_key(llm_string), data, self.namespace, self.embedder.identity()
+                self.embedder.embed(prompt),
+                _llm_key(llm_string),
+                data,
+                self.namespace,
+                self.embedder.identity(),
             )
 
     def clear(self, **kwargs: Any) -> None:

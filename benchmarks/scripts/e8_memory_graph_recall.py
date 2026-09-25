@@ -170,7 +170,9 @@ def main() -> None:
     print("threshold  fired  precision@k  recall@k")
     for r in result["quality"]:
         p = "-" if r["precision_at_k"] is None else f"{r['precision_at_k']:.3f}"
-        print(f"{r['threshold']:>9}  {r['fired']:>2}/{r['queries']}  {p:>11}  {r['recall_at_k']:>8.3f}")
+        print(
+            f"{r['threshold']:>9}  {r['fired']:>2}/{r['queries']}  {p:>11}  {r['recall_at_k']:>8.3f}"
+        )
     sep = result["separation"]
     print(
         f"top-1 relevant in {sep['queries_where_top1_is_relevant']}/{sep['queries']} queries; "

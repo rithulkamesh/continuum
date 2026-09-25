@@ -67,7 +67,14 @@ DEFAULT_UPSTREAM = "https://api.openai.com/v1"
 ENDPOINTS = {"chat/completions": "chat", "completions": "completion"}
 # Request fields that change transport, not the answer.
 _VOLATILE_FIELDS = ("stream", "stream_options", "user", "metadata", "store", "service_tier")
-_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length", "content-encoding", "host"}
+_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "content-length",
+    "content-encoding",
+    "host",
+}
 
 
 @dataclass
@@ -150,17 +157,25 @@ class _Stats:
             "# HELP continuum_proxy_requests_total Proxied completion requests by cache outcome.",
             "# TYPE continuum_proxy_requests_total counter",
         ]
-        lines += [f'continuum_proxy_requests_total{{outcome="{k}"}} {v}' for k, v in snap["requests"].items()]
+        lines += [
+            f'continuum_proxy_requests_total{{outcome="{k}"}} {v}'
+            for k, v in snap["requests"].items()
+        ]
         lines += [
             "# HELP continuum_reuse_lookups_total Reuse-tier lookups.",
             "# TYPE continuum_reuse_lookups_total counter",
         ]
-        lines += [f'continuum_reuse_lookups_total{{tier="{k}"}} {v}' for k, v in snap["tier_lookups"].items()]
+        lines += [
+            f'continuum_reuse_lookups_total{{tier="{k}"}} {v}'
+            for k, v in snap["tier_lookups"].items()
+        ]
         lines += [
             "# HELP continuum_reuse_hits_total Reuse-tier lookups that matched.",
             "# TYPE continuum_reuse_hits_total counter",
         ]
-        lines += [f'continuum_reuse_hits_total{{tier="{k}"}} {v}' for k, v in snap["tier_hits"].items()]
+        lines += [
+            f'continuum_reuse_hits_total{{tier="{k}"}} {v}' for k, v in snap["tier_hits"].items()
+        ]
         lines += [
             "# HELP continuum_reuse_tokens_saved_total Prompt tokens served from reuse tiers.",
             "# TYPE continuum_reuse_tokens_saved_total counter",
@@ -192,10 +207,17 @@ class _EventSink(ReuseObserver):
 
 def cache_bypass_reason(body: dict[str, Any], headers: Any) -> str | None:
     """Why a completion request must skip the cache, or None if cacheable."""
-    if body.get("tools") or body.get("functions") or body.get("tool_choice") or body.get("function_call"):
+    if (
+        body.get("tools")
+        or body.get("functions")
+        or body.get("tool_choice")
+        or body.get("function_call")
+    ):
         return "tools"
     for msg in body.get("messages") or []:
-        if isinstance(msg, dict) and (msg.get("role") in ("tool", "function") or msg.get("tool_calls")):
+        if isinstance(msg, dict) and (
+            msg.get("role") in ("tool", "function") or msg.get("tool_calls")
+        ):
             return "tool-messages"
     if int(body.get("n") or 1) > 1:
         return "n>1"
@@ -215,7 +237,11 @@ def _message_text(msg: dict[str, Any]) -> str:
 def request_key_parts(kind: str, body: dict[str, Any]) -> list[str]:
     """The prompt parts a request is keyed on: its content first, so requests
     sharing a system prompt share a prefix, then its canonical parameters."""
-    params = {k: v for k, v in body.items() if k not in _VOLATILE_FIELDS and k not in ("messages", "prompt")}
+    params = {
+        k: v
+        for k, v in body.items()
+        if k not in _VOLATILE_FIELDS and k not in ("messages", "prompt")
+    }
     if kind == "chat":
         parts = [_message_text(m) for m in body.get("messages") or [] if isinstance(m, dict)]
     else:
@@ -231,22 +257,69 @@ def _sse(obj: dict[str, Any]) -> bytes:
 
 def replay_as_stream(kind: str, response: dict[str, Any]) -> Iterator[bytes]:
     """Server-sent events equivalent to a stored non-streaming response."""
-    base = {"id": response.get("id", ""), "created": response.get("created", int(time.time())),
-            "model": response.get("model", "")}
+    base = {
+        "id": response.get("id", ""),
+        "created": response.get("created", int(time.time())),
+        "model": response.get("model", ""),
+    }
     for choice in response.get("choices", []):
         idx = choice.get("index", 0)
         if kind == "chat":
             msg = choice.get("message") or {}
             obj = "chat.completion.chunk"
-            yield _sse({**base, "object": obj, "choices": [
-                {"index": idx, "delta": {"role": msg.get("role", "assistant"), "content": ""}, "finish_reason": None}]})
-            yield _sse({**base, "object": obj, "choices": [
-                {"index": idx, "delta": {"content": msg.get("content") or ""}, "finish_reason": None}]})
-            yield _sse({**base, "object": obj, "choices": [
-                {"index": idx, "delta": {}, "finish_reason": choice.get("finish_reason", "stop")}]})
+            yield _sse(
+                {
+                    **base,
+                    "object": obj,
+                    "choices": [
+                        {
+                            "index": idx,
+                            "delta": {"role": msg.get("role", "assistant"), "content": ""},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+            )
+            yield _sse(
+                {
+                    **base,
+                    "object": obj,
+                    "choices": [
+                        {
+                            "index": idx,
+                            "delta": {"content": msg.get("content") or ""},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+            )
+            yield _sse(
+                {
+                    **base,
+                    "object": obj,
+                    "choices": [
+                        {
+                            "index": idx,
+                            "delta": {},
+                            "finish_reason": choice.get("finish_reason", "stop"),
+                        }
+                    ],
+                }
+            )
         else:
-            yield _sse({**base, "object": "text_completion", "choices": [
-                {"index": idx, "text": choice.get("text", ""), "finish_reason": choice.get("finish_reason", "stop")}]})
+            yield _sse(
+                {
+                    **base,
+                    "object": "text_completion",
+                    "choices": [
+                        {
+                            "index": idx,
+                            "text": choice.get("text", ""),
+                            "finish_reason": choice.get("finish_reason", "stop"),
+                        }
+                    ],
+                }
+            )
     yield b"data: [DONE]\n\n"
 
 
@@ -266,7 +339,9 @@ class _StreamAssembler:
         if chunk.get("usage"):
             self.usage = chunk["usage"]
         for c in chunk.get("choices", []):
-            slot = self.choices.setdefault(c.get("index", 0), {"text": "", "role": "assistant", "finish": None})
+            slot = self.choices.setdefault(
+                c.get("index", 0), {"text": "", "role": "assistant", "finish": None}
+            )
             if self.kind == "chat":
                 delta = c.get("delta") or {}
                 slot["role"] = delta.get("role") or slot["role"]
@@ -277,15 +352,25 @@ class _StreamAssembler:
                 slot["finish"] = c["finish_reason"]
 
     def response(self) -> dict[str, Any]:
-        out: dict[str, Any] = {**self.meta, "object": "chat.completion" if self.kind == "chat" else "text_completion"}
+        out: dict[str, Any] = {
+            **self.meta,
+            "object": "chat.completion" if self.kind == "chat" else "text_completion",
+        }
         choices = []
         for idx in sorted(self.choices):
             slot = self.choices[idx]
             if self.kind == "chat":
-                choices.append({"index": idx, "message": {"role": slot["role"], "content": slot["text"]},
-                                "finish_reason": slot["finish"]})
+                choices.append(
+                    {
+                        "index": idx,
+                        "message": {"role": slot["role"], "content": slot["text"]},
+                        "finish_reason": slot["finish"],
+                    }
+                )
             else:
-                choices.append({"index": idx, "text": slot["text"], "finish_reason": slot["finish"]})
+                choices.append(
+                    {"index": idx, "text": slot["text"], "finish_reason": slot["finish"]}
+                )
         out["choices"] = choices
         if self.usage is not None:
             out["usage"] = self.usage
@@ -295,7 +380,9 @@ class _StreamAssembler:
 class ContinuumProxy:
     """The proxy server. ``serve_forever()`` blocks; ``start()`` runs it on a thread."""
 
-    def __init__(self, config: ProxyConfig | None = None, host: str = "127.0.0.1", port: int = 8787) -> None:
+    def __init__(
+        self, config: ProxyConfig | None = None, host: str = "127.0.0.1", port: int = 8787
+    ) -> None:
         self.config = config or ProxyConfig()
         self.config.upstream = self.config.upstream.rstrip("/")
         self.stats = _Stats()
@@ -305,7 +392,9 @@ class ContinuumProxy:
         if self.config.semantic_threshold is not None:
             if self.config.embedder is None:
                 raise ValueError("the semantic tier needs an embedder (ProxyConfig.embedder)")
-            self.semantic = SemanticCacheIndex(self.config.semantic_entries, self.config.semantic_threshold)
+            self.semantic = SemanticCacheIndex(
+                self.config.semantic_entries, self.config.semantic_threshold
+            )
         self._local = threading.local()
         self._observer = _EventSink(self)
         proxy = self
@@ -354,12 +443,16 @@ class ContinuumProxy:
 
     # -- upstream --------------------------------------------------------------
 
-    def upstream_request(self, handler: _Handler, path: str, body: bytes | None, method: str) -> Any:
+    def upstream_request(
+        self, handler: _Handler, path: str, body: bytes | None, method: str
+    ) -> Any:
         headers = {k: v for k, v in handler.headers.items() if k.lower() not in _HOP_HEADERS}
         headers["Accept-Encoding"] = "identity"
         if "authorization" not in {k.lower() for k in headers} and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-        req = urllib.request.Request(self.config.upstream + path, data=body, headers=headers, method=method)
+        req = urllib.request.Request(
+            self.config.upstream + path, data=body, headers=headers, method=method
+        )
         try:
             return urllib.request.urlopen(req, timeout=self.config.timeout)
         except urllib.error.HTTPError as err:
@@ -400,7 +493,9 @@ class ContinuumProxy:
         try:
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
-            handler.send_json(400, {"error": {"message": "invalid JSON body", "type": "invalid_request_error"}})
+            handler.send_json(
+                400, {"error": {"message": "invalid JSON body", "type": "invalid_request_error"}}
+            )
             return
         path = "/chat/completions" if kind == "chat" else "/completions"
         if not isinstance(body, dict) or cache_bypass_reason(body, handler.headers) is not None:
@@ -427,7 +522,9 @@ class ContinuumProxy:
         except (urllib.error.URLError, OSError, ValueError) as err:
             self.stats.request("error")
             if not ctx.streamed:
-                handler.send_json(502, {"error": {"message": f"continuum proxy: {err}", "type": "upstream_error"}})
+                handler.send_json(
+                    502, {"error": {"message": f"continuum proxy: {err}", "type": "upstream_error"}}
+                )
             return
         finally:
             self._local.ctx = None
@@ -466,7 +563,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _route(self) -> tuple[str, str | None]:
         path = self.path.split("?", 1)[0]
-        stripped = path[len("/v1/"):] if path.startswith("/v1/") else path.lstrip("/")
+        stripped = path[len("/v1/") :] if path.startswith("/v1/") else path.lstrip("/")
         return stripped, ENDPOINTS.get(stripped)
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
@@ -501,7 +598,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_raw(err.status, err.body, err.headers, cache=cache)
             return
         except (urllib.error.URLError, OSError) as err:
-            self.send_json(502, {"error": {"message": f"continuum proxy: {err}", "type": "upstream_error"}})
+            self.send_json(
+                502, {"error": {"message": f"continuum proxy: {err}", "type": "upstream_error"}}
+            )
             return
         with resp:
             headers = {k: v for k, v in resp.headers.items() if k.lower() not in _HOP_HEADERS}
@@ -518,8 +617,13 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self.send_raw(resp.status, resp.read(), headers, cache=cache)
 
-    def send_raw(self, status: int, body: bytes, headers: dict[str, str] | None = None,
-                 cache: str | None = None) -> None:
+    def send_raw(
+        self,
+        status: int,
+        body: bytes,
+        headers: dict[str, str] | None = None,
+        cache: str | None = None,
+    ) -> None:
         self.send_response(status)
         for k, v in (headers or {}).items():
             if k.lower() not in _HOP_HEADERS:
@@ -530,8 +634,13 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_json(self, status: int, obj: dict[str, Any], cache: str | None = None,
-                  extra: dict[str, str] | None = None) -> None:
+    def send_json(
+        self,
+        status: int,
+        obj: dict[str, Any],
+        cache: str | None = None,
+        extra: dict[str, str] | None = None,
+    ) -> None:
         headers = {"Content-Type": "application/json", **(extra or {})}
         self.send_raw(status, json.dumps(obj).encode(), headers, cache=cache)
 
@@ -556,16 +665,28 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="python -m continuum.proxy", description=__doc__.splitlines()[0])
-    ap.add_argument("--upstream", default=os.environ.get("CONTINUUM_PROXY_UPSTREAM", DEFAULT_UPSTREAM),
-                    help="OpenAI-compatible base URL including /v1 (env CONTINUUM_PROXY_UPSTREAM)")
+    ap = argparse.ArgumentParser(
+        prog="python -m continuum.proxy", description=__doc__.splitlines()[0]
+    )
+    ap.add_argument(
+        "--upstream",
+        default=os.environ.get("CONTINUUM_PROXY_UPSTREAM", DEFAULT_UPSTREAM),
+        help="OpenAI-compatible base URL including /v1 (env CONTINUUM_PROXY_UPSTREAM)",
+    )
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--api-key", default=os.environ.get("CONTINUUM_PROXY_API_KEY") or os.environ.get("OPENAI_API_KEY"),
-                    help="used when a client sends no Authorization header")
+    ap.add_argument(
+        "--api-key",
+        default=os.environ.get("CONTINUUM_PROXY_API_KEY") or os.environ.get("OPENAI_API_KEY"),
+        help="used when a client sends no Authorization header",
+    )
     ap.add_argument("--memo-entries", type=int, default=4096)
-    ap.add_argument("--semantic-threshold", type=float, default=None,
-                    help="enable the semantic tier (needs --embed-model)")
+    ap.add_argument(
+        "--semantic-threshold",
+        type=float,
+        default=None,
+        help="enable the semantic tier (needs --embed-model)",
+    )
     ap.add_argument("--embed-model", help="embedding model on the upstream for the semantic tier")
     args = ap.parse_args(argv)
 
@@ -578,8 +699,13 @@ def main(argv: list[str] | None = None) -> None:
         upstream = args.upstream.rstrip("/")
         base = upstream[: -len("/v1")] if upstream.endswith("/v1") else upstream
         embedder = OpenAICompatibleEmbeddingProvider(base, args.embed_model, api_key=args.api_key)
-    config = ProxyConfig(upstream=args.upstream, api_key=args.api_key, memo_entries=args.memo_entries,
-                         semantic_threshold=args.semantic_threshold, embedder=embedder)
+    config = ProxyConfig(
+        upstream=args.upstream,
+        api_key=args.api_key,
+        memo_entries=args.memo_entries,
+        semantic_threshold=args.semantic_threshold,
+        embedder=embedder,
+    )
     proxy = ContinuumProxy(config, host=args.host, port=args.port)
     print(f"continuum proxy on {proxy.address}/v1 -> {config.upstream}", flush=True)
     print(f"  export OPENAI_BASE_URL={proxy.address}/v1", flush=True)
