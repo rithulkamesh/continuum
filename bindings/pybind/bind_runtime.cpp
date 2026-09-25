@@ -882,6 +882,13 @@ void bind_runtime(py::module_& m) {
       .def("token_reduction_ratio", &continuum::runtime::ReuseMetrics::token_reduction_ratio)
       .def("reset", &continuum::runtime::ReuseMetrics::reset);
 
+  py::class_<continuum::runtime::KVCacheIndex>(m, "KVCacheIndex")
+      .def(py::init<std::size_t>(), py::arg("max_entries") = 8192)
+      .def("size", &continuum::runtime::KVCacheIndex::size)
+      .def("max_entries", &continuum::runtime::KVCacheIndex::max_entries)
+      .def("estimated_bytes", &continuum::runtime::KVCacheIndex::estimated_bytes)
+      .def("clear", &continuum::runtime::KVCacheIndex::clear);
+
   py::class_<continuum::runtime::Session>(m, "Session")
       .def(py::init([](const std::string& id, py::object backend_registry, std::size_t max_cache) {
              auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
@@ -889,6 +896,14 @@ void bind_runtime(py::module_& m) {
            }),
            py::arg("id"), py::arg("backends"), py::arg("max_cache_entries") = 8192,
            py::keep_alive<1, 3>())  // Session holds a reference to the registry
+      .def(py::init([](const std::string& id, py::object backend_registry,
+                       continuum::runtime::KVCacheIndex& cache) {
+             auto& reg = backend_registry.cast<continuum::backend::BackendRegistry&>();
+             return new continuum::runtime::Session(id, reg, cache);
+           }),
+           py::arg("id"), py::arg("backends"), py::arg("cache"),
+           py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+           "Share one prefix-KV cache across sessions (it is internally locked).")
       .def("run", [](continuum::runtime::Session& self, const continuum::ir::Graph& graph,
                      const std::unordered_map<continuum::ir::NodeId, continuum::Value>& inputs) {
              return self.run(graph, inputs);

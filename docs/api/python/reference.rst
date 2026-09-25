@@ -36,6 +36,10 @@ Frontend
    :members:
    :show-inheritance:
 
+.. automodule:: continuum.proxy
+   :members: ContinuumProxy, ProxyConfig
+   :show-inheritance:
+
 .. automodule:: continuum.telemetry
    :members: OpenTelemetryObserver, CallbackObserver, instrument, auto_instrument, enabled_from_env
    :show-inheritance:

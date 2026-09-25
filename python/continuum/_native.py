@@ -51,6 +51,7 @@ train_classifier_demo = _rt.train_classifier_demo
 
 # --- Reuse subsystems -------------------------------------------------
 Session = _rt.Session
+KVCacheIndex = _rt.KVCacheIndex
 ReusePolicy = _rt.ReusePolicy
 ReusePolicyKind = _rt.ReusePolicyKind
 ReuseMetrics = _rt.ReuseMetrics
@@ -97,6 +98,7 @@ __all__ = [
     "run_tensor_op",
     "train_classifier_demo",
     "Session",
+    "KVCacheIndex",
     "ReusePolicy",
     "ReusePolicyKind",
     "ReuseMetrics",
