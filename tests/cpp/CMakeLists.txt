@@ -16,6 +16,9 @@ add_executable(
   test_mlx_backend.cpp
 )
 target_link_libraries(continuum_cpp_tests PRIVATE continuum_core GTest::gtest_main)
+if(CONTINUUM_HAVE_MLX)
+  set_target_properties(continuum_cpp_tests PROPERTIES BUILD_RPATH "${MLX_LIBRARY_DIRS}")
+endif()
 target_compile_definitions(continuum_cpp_tests PRIVATE CONTINUUM_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 # Example out-of-tree plugin, built from the public C header only.

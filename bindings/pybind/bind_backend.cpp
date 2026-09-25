@@ -190,6 +190,9 @@ void bind_backend(py::module_& m) {
       .def("names", &BackendRegistry::names)
       .def("has", &BackendRegistry::has, py::arg("name"));
 
+  m.def("mlx_runtime", &continuum::backend::MLXBackend::runtime,
+        "Which kernels the mlx backend runs: 'mlx <version> (gpu|cpu)' or 'reference (built without MLX)'.");
+
   m.def("check_backend", [](const std::string& target, bool expect_deterministic,
                              const std::string& prompt, const std::string& tensor_op) {
           auto backend = ResolveBackend(target);

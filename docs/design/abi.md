@@ -82,33 +82,46 @@ C++ test suite builds it from the public header alone and loads it.
 |---------|---------------|:------:|:-----:|:-----:|:--------------:|-------|
 | `FakeLLMBackend` | `fake` | | ✓ | ✓ | ✓ | deterministic, offline; used by examples and CI |
 | `LibTorchBackend` | `default` | ✓ | | | | `identity`, `relu`, `softmax`, `add`, `matmul` |
-| `MLXBackend` | `mlx` | ✓ | | | | same ops on `MlxTensorValue`; see below |
+| `MLXBackend` | `mlx` | ✓ | | | | Apple MLX kernels (Metal on Apple silicon); see below |
 | `VllmShimBackend` | `vllm` | | ✓ | ✓ | | any `/v1/completions` server (vLLM, Ollama) when `VLLM_BASE_URL` is set |
 | `OpenAIBackend`, `AzureOpenAIBackend`, `AnthropicBackend` | `openai`, `azure`, `anthropic` | | ✓ | ✓ | | |
 | Python callable | `register_python(...)` | | ✓ | ✓ (opt-out) | ✓ | see `docs/integrations.md` |
 
 ### MLX
 
-`MLXBackend` handles the `mlx` tensor type (`CONTINUUM_TENSOR_BACKEND=mlx`).
-It is a portable C++ reference implementation over row-major float32
-`MlxTensorValue` buffers. It does **not** link Apple's MLX framework, so it
-builds and runs on every platform, Apple silicon included.
+`MLXBackend` handles the `mlx` tensor type (`CONTINUUM_TENSOR_BACKEND=mlx`)
+on row-major float32 `MlxTensorValue` buffers.
 
-| Op | Inputs | Semantics |
-|----|--------|-----------|
-| `identity` / `input` / `id` | 1 | returns the input unchanged (any tensor type) |
-| `relu` | 1 | elementwise `max(0, x)` |
-| `softmax` | 1 | along `attrs[0]` (default -1), max-subtracted for stability |
-| `add` | 2 | elementwise, shapes must match |
-| `matmul` | 2 | 1D·1D dot product, or 2D×2D |
+- **With Apple MLX** (the default on Apple silicon): each op runs as an
+  `mlx::core` kernel on the Metal GPU. Set `CONTINUUM_MLX_DEVICE=cpu` to pin
+  the CPU. `pip install -e .` on an M-series Mac pulls in the `mlx` wheel and
+  builds against it automatically. On Linux, `pip install "mlx[cpu]"` and
+  build with `-DCONTINUUM_USE_MLX=ON` to use MLX's CPU backend.
+- **Without MLX** (`-DCONTINUUM_USE_MLX=OFF`, or MLX not installed): the same
+  ops run on portable C++ reference kernels.
+
+`continuum._native.mlx_runtime()` (C++: `MLXBackend::runtime()`) reports
+which is in use: `"mlx 0.32.2 (gpu)"` or `"reference (built without MLX)"`.
+The CMake option `CONTINUUM_USE_MLX` takes `AUTO` (default: on when the `mlx`
+package is importable on Apple silicon), `ON` (required), or `OFF`.
+
+| Op | Inputs | Semantics | MLX kernel |
+|----|--------|-----------|------------|
+| `identity` / `input` / `id` | 1 | returns the input unchanged (any tensor type) | none |
+| `relu` | 1 | elementwise `max(0, x)` | `mx::maximum` |
+| `softmax` | 1 | along `attrs[0]` (default -1) | `mx::softmax(..., precise=true)` |
+| `add` | 2 | elementwise, shapes must match | `mx::add` |
+| `matmul` | 2 | 1D·1D dot product, or 2D×2D | `mx::matmul` (dot: `sum(a*b)`) |
 
 Inputs may be libtorch `TensorValue`s (converted to float32) or
-`MlxTensorValue`s. A tensor whose shape does not match its data length, a
-missing input, a bad `softmax` dim, or an unknown op is rejected with
-`std::runtime_error`. Outputs match libtorch to 1e-5
-(`tests/cpp/test_mlx_backend.cpp`). There is no token path, no cache, and no
-state. The `mlx-macos-arm64` CI job runs this suite (`ctest -R '^MLX'`), the
-conformance check, and the libtorch parity example on an Apple-silicon runner.
+`MlxTensorValue`s. Before any kernel runs, the backend rejects with
+`std::runtime_error`: a tensor whose shape does not match its data length, a
+missing input, a bad `softmax` dim, and an unknown op. Outputs match libtorch
+to 1e-5 (`tests/cpp/test_mlx_backend.cpp`). There is no token path, no cache,
+and no state. The `mlx-macos-arm64` CI job installs `mlx` and builds with
+`-DCONTINUUM_USE_MLX=ON`. It checks that `mlx_runtime()` reports real MLX,
+then runs `ctest -R '^MLX'`, the conformance check, and the libtorch parity
+example.
 
 ## Backend conformance
 

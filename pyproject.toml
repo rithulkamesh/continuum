@@ -3,7 +3,13 @@
 # (include/continuum/ir/value.hpp and others) include <torch/...>, and
 # CMakeLists.txt runs `import torch` to locate libtorch's CMake package.
 # It must therefore be present in the build environment.
-requires = ["scikit-build-core>=0.9", "pybind11>=2.11", "torch>=2.2"]
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.11",
+  "torch>=2.2",
+  # Apple silicon builds the mlx tensor backend against Apple MLX (Metal).
+  "mlx>=0.25; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -12,7 +18,10 @@ version = "1.0.0"
 description = "Unified runtime for token + tensor program execution across LLM and ML backends"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.2"]
+dependencies = [
+  "torch>=2.2",
+  "mlx>=0.25; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 license = { file = "LICENSE" }
 authors = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 classifiers = [

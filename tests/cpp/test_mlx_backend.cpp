@@ -122,3 +122,12 @@ TEST(MLXBackend, EmptyAndNonTensorPaths) {
   token.kind = NodeKind::TokenOp;
   EXPECT_EQ(std::get<std::string>(mlx.run_with_cache(token, {}, std::nullopt, 0).output), "mlx");
 }
+
+TEST(MLXBackend, ReportsRuntime) {
+  const auto runtime = continuum::backend::MLXBackend::runtime();
+#ifdef CONTINUUM_HAVE_MLX
+  EXPECT_EQ(runtime.rfind("mlx ", 0), 0u) << runtime;  // real Apple MLX kernels
+#else
+  EXPECT_EQ(runtime, "reference (built without MLX)");
+#endif
+}

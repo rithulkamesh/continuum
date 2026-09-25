@@ -10,6 +10,11 @@ from __future__ import annotations
 
 try:
     import torch as _torch  # noqa: F401  loads libtorch before the extension
+
+    try:  # loads libmlx when the extension was built against Apple MLX
+        import mlx.core as _mlx_core  # noqa: F401
+    except ImportError:
+        pass
     from . import _continuum as _c  # type: ignore[attr-defined]
 except Exception as _exc:  # pragma: no cover - only hit on a broken install
     import importlib.util as _ilu
@@ -37,6 +42,7 @@ Graph = _ir.Graph
 # --- Backends -----------------------------------------------------------
 BackendRegistry = _backend.BackendRegistry
 check_backend = _backend.check_backend
+mlx_runtime = _backend.mlx_runtime
 
 # --- Runtime core -----------------------------------------------------
 GraphBuilder = _rt.GraphBuilder
@@ -88,6 +94,7 @@ __all__ = [
     "Graph",
     "BackendRegistry",
     "check_backend",
+    "mlx_runtime",
     "GraphBuilder",
     "Interpreter",
     "DurableAgent",

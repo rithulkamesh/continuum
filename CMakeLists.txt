@@ -13,6 +13,10 @@ option(CONTINUUM_USE_SPDLOG "Use spdlog logging" ON)
 option(CONTINUUM_USE_CURL "Use libcurl for remote backends" ON)
 option(CONTINUUM_WERROR "Treat warnings as errors" OFF)
 option(CONTINUUM_COVERAGE "Build with coverage instrumentation" OFF)
+# Apple MLX for the `mlx` tensor backend. AUTO: on when the `mlx` Python
+# package (which ships libmlx + its CMake config) is importable on Apple
+# silicon; ON: require it anywhere (Linux has CPU wheels: pip install "mlx[cpu]").
+set(CONTINUUM_USE_MLX "AUTO" CACHE STRING "Use Apple MLX for the mlx backend (AUTO/ON/OFF)")
 
 if(CONTINUUM_BUILD_PYTHON)
     find_package(pybind11 CONFIG REQUIRED)
@@ -34,6 +38,36 @@ if(CONTINUUM_USE_LIBTORCH)
 endif()
 if(CONTINUUM_USE_ABSL)
     find_package(absl CONFIG REQUIRED)
+endif()
+set(CONTINUUM_HAVE_MLX OFF)
+if(CONTINUUM_USE_MLX STREQUAL "ON" OR (CONTINUUM_USE_MLX STREQUAL "AUTO" AND APPLE
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"))
+    if(NOT MLX_DIR)
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if(Python3_Interpreter_FOUND)
+            execute_process(
+                COMMAND ${Python3_EXECUTABLE} -c "import mlx, os; print(os.path.join(list(mlx.__path__)[0], 'share', 'cmake', 'MLX'))"
+                OUTPUT_VARIABLE MLX_CMAKE_DIR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE MLX_DIR_RESULT
+                ERROR_QUIET
+            )
+            if(MLX_DIR_RESULT EQUAL 0 AND EXISTS "${MLX_CMAKE_DIR}")
+                set(MLX_DIR "${MLX_CMAKE_DIR}")
+            endif()
+        endif()
+    endif()
+    if(CONTINUUM_USE_MLX STREQUAL "ON")
+        find_package(MLX CONFIG REQUIRED)
+    else()
+        find_package(MLX CONFIG QUIET)
+    endif()
+    if(MLX_FOUND)
+        set(CONTINUUM_HAVE_MLX ON)
+        message(STATUS "Continuum: mlx backend uses Apple MLX from ${MLX_DIR}")
+    else()
+        message(STATUS "Continuum: MLX not found; mlx backend uses reference kernels")
+    endif()
 endif()
 if(CONTINUUM_USE_SPDLOG)
     find_package(spdlog CONFIG QUIET)
@@ -97,6 +131,15 @@ endif()
 if(CONTINUUM_USE_CURL)
     target_link_libraries(continuum_core PUBLIC CURL::libcurl)
 endif()
+if(CONTINUUM_HAVE_MLX)
+    target_link_libraries(continuum_core PUBLIC mlx)
+    target_compile_definitions(continuum_core PUBLIC CONTINUUM_HAVE_MLX=1)
+    if(MLX_CXX_FLAGS)
+        target_compile_options(continuum_core PUBLIC ${MLX_CXX_FLAGS})
+    endif()
+    # libmlx lives inside the mlx wheel; find it at runtime without LD_LIBRARY_PATH.
+    set_target_properties(continuum_core PROPERTIES INSTALL_RPATH "${MLX_LIBRARY_DIRS}")
+endif()
 target_compile_options(continuum_core PRIVATE -Wall -Wextra -Wpedantic)
 if(CONTINUUM_WERROR)
     target_compile_options(continuum_core PRIVATE -Werror)
@@ -114,6 +157,10 @@ if(CONTINUUM_BUILD_PYTHON)
         bindings/pybind/bind_backend.cpp
     )
     target_link_libraries(_continuum PRIVATE continuum_core)
+    if(CONTINUUM_HAVE_MLX)
+        set_target_properties(_continuum PROPERTIES BUILD_RPATH "${MLX_LIBRARY_DIRS}"
+                                                    INSTALL_RPATH "${MLX_LIBRARY_DIRS}")
+    endif()
     install(TARGETS _continuum DESTINATION continuum)
 endif()
 
